@@ -224,6 +224,9 @@ def main():
     ap.add_argument('--gdb', action='store_true', help='start halted, gdb stub on :1234, no timeout')
     ap.add_argument('--hmp', action='append', default=[], help='extra monitor command run after stop (repeatable), e.g. "x /8gx 0xfffffe..."')
     ap.add_argument('--cpu', default='cortex-a76', help='QEMU CPU model (default: cortex-a76)')
+    ap.add_argument('--fb-base', default='0x9c000000', help='framebuffer physical address (platina: 0x9d400000)')
+    ap.add_argument('--fb-width', type=int, default=1080, help='framebuffer width (platina: 1080)')
+    ap.add_argument('--fb-height', type=int, default=2400, help='framebuffer height (platina: 2280)')
     ap.add_argument('--kernel', help='matching unstripped kernel, for exact framebuffer text decoding (uses llvm-nm)')
     ap.add_argument('--fail-on-panic', action='store_true', help='exit 2 for a visible panic, 3 for incomplete/blank decoding; requires --kernel')
     ap.add_argument('--live-serial', action='store_true', help='stream serial console output to stdout in real time')
@@ -238,6 +241,10 @@ def main():
             print('[!] Optional: llvm-nm not found (needed only when using --kernel for text decoding)', file=sys.stderr)
         return 0 if ok else 1
 
+    global FB_BASE, FB_W, FB_H, FB_STRIDE
+    FB_BASE = int(a.fb_base, 0)
+    FB_W, FB_H = a.fb_width, a.fb_height
+    FB_STRIDE = FB_W * 4
     if not a.payload or not a.outdir:
         ap.error('payload and outdir are required unless --check-env is specified')
 
