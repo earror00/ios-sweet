@@ -38,7 +38,7 @@ jobs:
           # streams back to back; pyliblzfse stops after the first, so use a
           # small multi-stream decoder around the reference decoder state
           # (tools/lzfse-multistream.c + vendored decode-only lzfse sources).
-          gcc -O2 -o /usr/local/bin/lzfse-multistream tools/lzfse-multistream.c \
+          gcc -O2 -I tools/lzfse-src -o /usr/local/bin/lzfse-multistream tools/lzfse-multistream.c \
             tools/lzfse-src/lzfse_decode.c tools/lzfse-src/lzfse_decode_base.c \
             tools/lzfse-src/lzfse_fse.c tools/lzfse-src/lzvn_decode_base.c
           ipsw version
