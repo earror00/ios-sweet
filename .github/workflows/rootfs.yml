@@ -65,20 +65,9 @@ jobs:
             lzfse -decode -i fs.dmg -o fs-raw.dmg
             mv fs-raw.dmg fs.dmg
           } || true
-          # A koly trailer with an empty resource fork is Apple's "wrapped"
-          # marker, not a UDIF: strip it so apfs-fuse reads raw APFS.
-          size=$(stat -c%s fs.dmg)
-          [ "$(tail -c4 fs.dmg | xxd -p)" = "6b6f6c79" ] && {
-            rsrc_len=$(python3 -c "import struct; f = open('fs.dmg','rb'); f.seek($size - 512); print(struct.unpack_from('>Q', f.read(512), 0x30)[0])")
-            [ "$rsrc_len" = "0" ] && { truncate -s $((size - 512)) fs.dmg; echo "stripped koly trailer"; }
-          } || true
-          for f in fs.dmg sys.dmg app.dmg; do
-            printf '%s: ' "$f"; head -c4 "$f" | xxd -p
-          done
-          # Every image must be a raw APFS container now (checksum + NXSB@0x20).
-          for f in fs.dmg sys.dmg app.dmg; do
-            [ "$(head -c4 "$f" | xxd -p)" = "85216704" ] || { echo "$f: not raw APFS"; exit 1; }
-          done
+          # The decoded image is either a bare APFS container or a GPT disk
+          # holding one; reduce it (and drop any empty-fork koly trailer).
+          python3 tools/extract_apfs.py fs.dmg
           cd ..
           ls -la dmgs/
 
