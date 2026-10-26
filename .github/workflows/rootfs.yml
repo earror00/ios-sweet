@@ -67,7 +67,7 @@ jobs:
           } || true
           # The decoded image is either a bare APFS container or a GPT disk
           # holding one; reduce it (and drop any empty-fork koly trailer).
-          python3 tools/extract_apfs.py fs.dmg
+          python3 "$GITHUB_WORKSPACE/tools/extract_apfs.py" fs.dmg
           cd ..
           ls -la dmgs/
 
