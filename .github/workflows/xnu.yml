@@ -153,8 +153,19 @@ jobs:
           path: xnu/out
 
       - name: Payload
+        env:
+          IPSW_URL: "https://updates.cdn-apple.com/2025FallFCS/fullrestores/122-77006/1158E502-D76D-4226-AA06-ED5E30CD1111/iPhone10,3,iPhone10,6_16.7.16_20H392_Restore.ipsw"
         run: |
           ls xnu/out
+          # the D22AP identity device tree is an Apple artifact kept out of git:
+          # fetch it from the IPSW (range requests, only 33 KB)
+          curl -fsSL https://github.com/blacktop/ipsw/releases/download/v3.1.739/ipsw_3.1.739_linux_x86_64.tar.gz \
+            | sudo tar xz -C /usr/local/bin ipsw
+          mkdir -p research/ipsw-x
+          python3 tools/remotezip.py "$IPSW_URL" DeviceTree.d22ap.im4p research/ipsw-x/dt
+          ipsw img4 im4p extract research/ipsw-x/dt/Firmware/all_flash/DeviceTree.d22ap.im4p \
+            -o research/ipsw-x/d22ap.adt
+          mkdir -p shim/out
           python3 tools/mkadt-platina.py shim/out/platina-adt.bin --highmem
           # cpus=4: the four Cortex-A73s (homogeneous cluster 0) for first boots.
           python3 tools/mkpayload.py xnu/out/kernel.development.sweet shim/out/platina-adt.bin \
