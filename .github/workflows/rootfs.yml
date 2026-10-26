@@ -25,6 +25,10 @@ jobs:
       - name: Deps
         run: |
           sudo apt-get update -q
+          # the azure kernel ships without extra fs modules: pull hfsplus in
+          sudo apt-get install -y -q "linux-modules-extra-$(uname -r)" || echo "modules-extra unavailable"
+          sudo depmod -a || true
+          sudo modprobe hfsplus && echo "hfsplus loaded" || echo "hfsplus still unavailable"
           sudo apt-get install -y -q hfsprogs rsync android-sdk-libsparse-utils \
             libfuse3-dev libbz2-dev liblzfse-dev libutf8proc-dev cmake ninja-build
           git clone --recursive --depth 1 https://github.com/sgan81/apfs-fuse /tmp/apfs-fuse
