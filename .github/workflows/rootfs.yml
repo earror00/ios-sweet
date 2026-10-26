@@ -27,7 +27,8 @@ jobs:
           sudo apt-get install -y -q hfsprogs rsync android-sdk-libsparse-utils \
             libfuse3-dev libbz2-dev liblzfse-dev libutf8proc-dev cmake ninja-build
           git clone --recursive --depth 1 https://github.com/sgan81/apfs-fuse /tmp/apfs-fuse
-          cmake -S /tmp/apfs-fuse -B /tmp/apfs-fuse/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S /tmp/apfs-fuse -B /tmp/apfs-fuse/build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build /tmp/apfs-fuse/build -j
           sudo cp /tmp/apfs-fuse/build/apfs-fuse /usr/local/bin/
           # ipsw tool: identifies the fs/sys/app dmgs via BuildManifest (a size
