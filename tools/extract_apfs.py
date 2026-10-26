@@ -17,11 +17,18 @@ import sys
 APFS_TYPE_GUID = bytes.fromhex('ef57347c0000aa11aa1100306543ecac')
 
 
+def is_apfs(head):
+    """A bare APFS container starts with an 8-byte fletcher checksum and a
+    32-byte object header; the NXSB magic sits at 0x20. The checksum value
+    differs per container - only the magic position is invariant."""
+    return len(head) >= 36 and head[0x20:0x24] == b'NXSB'
+
+
 def main(src):
     size = os.path.getsize(src)
     f = open(src, 'rb')
     head = f.read(64)
-    if head[:4] == bytes.fromhex('85216704'):
+    if is_apfs(head):
         print('already a bare APFS container')
     else:
         f.seek(512)
@@ -69,8 +76,10 @@ def main(src):
             print(f'real UDIF (resource fork {rsrc_len} bytes) - leaving as is')
     f.close()
     with open(src, 'rb') as g:
-        if g.read(4) != bytes.fromhex('85216704'):
-            raise SystemExit(f'{src}: final head is not a raw APFS container')
+        head = g.read(64)
+        if not is_apfs(head):
+            raise SystemExit(f'{src}: final head is not a raw APFS container '
+                             f'({head[:36].hex()})')
     print(f'OK: {src} is a raw APFS container ({size} bytes)')
 
 
