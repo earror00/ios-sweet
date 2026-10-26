@@ -141,7 +141,7 @@ jobs:
           # mkbootimg (python) is not packaged on 24.04: fetch the AOSP tool
           sudo curl -fsSL https://raw.githubusercontent.com/LineageOS/android_system_tools_mkbootimg/master/mkbootimg.py \
             -o /usr/local/bin/mkbootimg && sudo chmod +x /usr/local/bin/mkbootimg
-          mkdir -p /usr/local/lib/python3/dist-packages/gki
+          sudo mkdir -p /usr/local/lib/python3/dist-packages/gki
           sudo curl -fsSL https://raw.githubusercontent.com/LineageOS/android_system_tools_mkbootimg/master/gki/generate_gki_certificate.py \
             -o /usr/local/lib/python3/dist-packages/gki/generate_gki_certificate.py
           sudo touch /usr/local/lib/python3/dist-packages/gki/__init__.py
