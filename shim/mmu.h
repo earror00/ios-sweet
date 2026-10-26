@@ -1,7 +1,11 @@
 #pragma once
 #include <stdint.h>
 
+#ifdef PLATINA
+#define FB_PHYS	0x9d400000UL
+#else
 #define FB_PHYS	0x9c000000UL
+#endif
 
 struct mmu_info {
 	uint64_t img_lo, img_hi, ttbr;

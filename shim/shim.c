@@ -12,9 +12,15 @@
 #include "loader.h"
 #include "ufs.h"
 
+#ifdef PLATINA
+#define IMEM_RESTART_REASON	0x146bf65cUL	/* qcom,msm-imem@146bf000 restart_reason@65c */
+#define RESTART_BOOTLOADER	0x77665500U
+#define PSHOLD			0x010ac000UL	/* qcom,pshold pshold-base */
+#else
 #define IMEM_RESTART_REASON	0x146aa65cUL	/* qcom,msm-imem restart_reason@65c */
 #define RESTART_BOOTLOADER	0x77665500U
 #define PSHOLD			0x0c264000UL
+#endif
 
 #define GICD_BASE		0x17a00000UL
 #define GICR_BASE		0x17a60000UL
@@ -183,6 +189,12 @@ void secondary_main(uint64_t idx)
 	smc(PSCI_CPU_OFF, 0, 0, 0);
 }
 
+#ifdef PLATINA
+static uint64_t cpu_mpidr(int i) { return (uint64_t)(i < 4 ? i : 0x100 + (i - 4)); }
+#else
+static uint64_t cpu_mpidr(int i) { return (uint64_t)i << 8; }
+#endif
+
 static void __attribute__((unused)) test_smp(void)
 {
 	stage = "smp";
@@ -190,12 +202,12 @@ static void __attribute__((unused)) test_smp(void)
 	int64_t ret[NR_CPUS];
 
 	for (int i = 1; i < NR_CPUS; i++)
-		ret[i] = smc(PSCI_CPU_ON, (uint64_t)i << 8, (uintptr_t)secondary_entry, i);
+		ret[i] = smc(PSCI_CPU_ON, cpu_mpidr(i), (uintptr_t)secondary_entry, i);
 	delay_ms(500);
 	for (int i = 1; i < NR_CPUS; i++) {
 		char label[] = "CPU0";
 		label[3] = '0' + i;
-		if (((uint64_t)i << 8) == self)
+		if (cpu_mpidr(i) == self)
 			con_str(label, "is boot cpu");
 		else
 			con_hex2(label, "ret=", (uint32_t)ret[i], "mpidr=",
