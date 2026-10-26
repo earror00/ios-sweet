@@ -125,3 +125,45 @@ jobs:
           name: xnu-kernel
           path: out/
           if-no-files-found: warn
+
+  platina-shim:
+    # Cross-build the platina shim and pack the SWEETXNU payload on Linux.
+    # The final mkbootimg step happens on the user's PC: the stock platina
+    # DTB stays out of git (device serials).
+    needs: build
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-aarch64-linux-gnu android-sdk-mkbootimg
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: xnu-kernel
+          path: xnu/out
+
+      - name: Payload
+        run: |
+          ls xnu/out
+          python3 tools/mkadt-platina.py shim/out/platina-adt.bin --highmem
+          # cpus=4: the four Cortex-A73s (homogeneous cluster 0) for first boots.
+          python3 tools/mkpayload.py xnu/out/kernel.development.sweet shim/out/platina-adt.bin \
+              shim/out/payload-platina.bin \
+              --cmdline 'debug=0xc serial=3 cpus=4 keepsyms=1 -enable_kprintf_spam -noprogress rd=mmcroot0 unentitled_ios_sim_launch=1 ignition_level=1 wdt_test=no_user_checkin rootrw=1 launchd_unsecure_cache=1 wdt=-1 sweetfb_noconsole=1 sweetfb_hz=30'
+          ls -la shim/out/
+
+      - name: Shim
+        run: |
+          cd shim && TARGET=platina ./build.sh ../shim/out/payload-platina.bin
+          ls -la out/Image out/ramdisk.bin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platina-shim
+          path: |
+            shim/out/Image
+            shim/out/ramdisk.bin
+            shim/out/payload-platina.bin
+            shim/out/platina-adt.bin
+          retention-days: 7
