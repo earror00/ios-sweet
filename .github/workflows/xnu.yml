@@ -136,7 +136,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -q && sudo apt-get install -y -q gcc-aarch64-linux-gnu android-sdk-mkbootimg
+      - run: |
+          sudo apt-get update -q && sudo apt-get install -y -q gcc-aarch64-linux-gnu python3-pip
+          # mkbootimg (python) is not packaged on 24.04: fetch the AOSP tool
+          sudo curl -fsSL https://raw.githubusercontent.com/LineageOS/android_system_tools_mkbootimg/master/mkbootimg.py \
+            -o /usr/local/bin/mkbootimg && sudo chmod +x /usr/local/bin/mkbootimg
+          mkdir -p /usr/local/lib/python3/dist-packages/gki
+          sudo curl -fsSL https://raw.githubusercontent.com/LineageOS/android_system_tools_mkbootimg/master/gki/generate_gki_certificate.py \
+            -o /usr/local/lib/python3/dist-packages/gki/generate_gki_certificate.py
+          sudo touch /usr/local/lib/python3/dist-packages/gki/__init__.py
+          mkbootimg --help 2>&1 | head -2 || true
 
       - uses: actions/download-artifact@v4
         with:
