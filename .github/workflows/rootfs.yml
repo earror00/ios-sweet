@@ -35,7 +35,7 @@ jobs:
           git clone --depth 1 https://github.com/lzfse/lzfse /tmp/lzfse
           cmake -S /tmp/lzfse -B /tmp/lzfse/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/lzfse/build -j
-          sudo cp /tmp/lzfse/build/bin/lzfse /usr/local/bin/
+          sudo cp /tmp/lzfse/build/lzfse /usr/local/bin/
           # ipsw tool: identifies the fs/sys/app dmgs via BuildManifest (a size
           # heuristic mispicks them).
           IPSW_URL=$(curl -fsSL https://api.github.com/repos/blacktop/ipsw/releases/latest \
