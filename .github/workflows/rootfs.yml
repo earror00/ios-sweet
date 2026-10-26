@@ -37,10 +37,9 @@ jobs:
           cmake --build /tmp/lzfse/build -j
           sudo cp /tmp/lzfse/build/lzfse /usr/local/bin/
           # ipsw tool: identifies the fs/sys/app dmgs via BuildManifest (a size
-          # heuristic mispicks them).
-          IPSW_URL=$(curl -fsSL https://api.github.com/repos/blacktop/ipsw/releases/latest \
-            | grep -o 'https://[^"]*linux_x86_64.tar.gz' | head -1)
-          curl -fsSL "$IPSW_URL" | sudo tar xz -C /usr/local/bin ipsw
+          # heuristic mispicks them). Pinned release, no API rate limits.
+          curl -fsSL https://github.com/blacktop/ipsw/releases/download/v3.1.739/ipsw_3.1.739_linux_x86_64.tar.gz \
+            | sudo tar xz -C /usr/local/bin ipsw
           ipsw version
           apfs-fuse -h 2>&1 | head -2 || true
           which mkfs.hfsplus fsck.hfsplus img2simg rsync lzfse
