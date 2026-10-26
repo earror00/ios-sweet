@@ -30,19 +30,16 @@ jobs:
           cmake -S /tmp/apfs-fuse -B /tmp/apfs-fuse/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/apfs-fuse/build -j
           sudo cp /tmp/apfs-fuse/build/apfs-fuse /usr/local/bin/
-          # lzfse CLI: Apple recompresses older IPSWs on the CDN; the OS dmg
-          # comes out as an lzfse stream ('bvxn' magic) and needs decompressing.
-          git clone --depth 1 https://github.com/lzfse/lzfse /tmp/lzfse
-          cmake -S /tmp/lzfse -B /tmp/lzfse/build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build /tmp/lzfse/build -j
-          sudo cp /tmp/lzfse/build/lzfse /usr/local/bin/
           # ipsw tool: identifies the fs/sys/app dmgs via BuildManifest (a size
           # heuristic mispicks them). Pinned release, no API rate limits.
           curl -fsSL https://github.com/blacktop/ipsw/releases/download/v3.1.739/ipsw_3.1.739_linux_x86_64.tar.gz \
             | sudo tar xz -C /usr/local/bin ipsw
+          # pyliblzfse: Apple's compressed OS image is many independent lzfse
+          # streams back to back; the reference CLI stops after the first one.
+          pip3 install --break-system-packages pyliblzfse
           ipsw version
           apfs-fuse -h 2>&1 | head -2 || true
-          which mkfs.hfsplus fsck.hfsplus img2simg rsync lzfse
+          which mkfs.hfsplus fsck.hfsplus img2simg rsync
 
       - name: Download IPSW
         run: |
@@ -61,9 +58,9 @@ jobs:
           rm -f ipsw.ipsw
           cd dmgs
           head -c4 fs.dmg | grep -q bvxn && {
-            echo "decompressing lzfse OS dmg..."
-            lzfse -decode -i fs.dmg -o fs-raw.dmg
-            mv fs-raw.dmg fs.dmg
+            echo "decoding segmented-lzfse OS dmg..."
+            python3 "$GITHUB_WORKSPACE/tools/decode_lzfse_segments.py" fs.dmg fs-dec.dmg
+            mv fs-dec.dmg fs.dmg
           } || true
           # The decoded image is either a bare APFS container or a GPT disk
           # holding one; reduce it (and drop any empty-fork koly trailer).
