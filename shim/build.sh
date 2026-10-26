@@ -35,6 +35,13 @@ if [ -n "${1:-}" ]; then
 else
 	(cd out && rm -rf rd && mkdir rd && cd rd && find . | cpio -o -H newc --quiet | gzip -9 > ../ramdisk.bin)
 fi
+# The DTB stays out of git (device serials): when it is missing (CI), stop
+# after Image+ramdisk - the final mkbootimg assembly happens on the host PC.
+if [ ! -f "$DTB" ]; then
+	echo "note: $DTB missing - skipping boot.img assembly (assemble locally)"
+	ls -l out/Image out/ramdisk.bin
+	exit 0
+fi
 mkbootimg --header_version 2 --kernel out/Image --ramdisk out/ramdisk.bin \
 	--dtb "$DTB" --base 0 --kernel_offset 0x8000 --ramdisk_offset 0x1000000 \
 	--tags_offset 0x100 --dtb_offset 0x1f00000 --pagesize 4096 \
