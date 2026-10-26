@@ -70,12 +70,7 @@ jobs:
           # marker, not a UDIF: strip it so apfs-fuse reads raw APFS.
           size=$(stat -c%s fs.dmg)
           [ "$(tail -c4 fs.dmg | xxd -p)" = "6b6f6c79" ] && {
-            rsrc_len=$(python3 -c "
-import struct, sys
-f = open('fs.dmg', 'rb')
-f.seek($size - 512)
-k = f.read(512)
-print(struct.unpack_from('>Q', k, 0x30)[0])")
+            rsrc_len=$(python3 -c "import struct; f = open('fs.dmg','rb'); f.seek($size - 512); print(struct.unpack_from('>Q', f.read(512), 0x30)[0])")
             [ "$rsrc_len" = "0" ] && { truncate -s $((size - 512)) fs.dmg; echo "stripped koly trailer"; }
           } || true
           for f in fs.dmg sys.dmg app.dmg; do
