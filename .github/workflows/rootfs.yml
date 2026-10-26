@@ -62,7 +62,7 @@ jobs:
           cd dmgs
           head -c4 fs.dmg | grep -q bvxn && {
             echo "decompressing lzfse OS dmg..."
-            lzfse -d fs.dmg fs-raw.dmg
+            lzfse -decode -i fs.dmg -o fs-raw.dmg
             mv fs-raw.dmg fs.dmg
           } || true
           # A koly trailer with an empty resource fork is Apple's "wrapped"
