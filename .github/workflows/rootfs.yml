@@ -72,6 +72,8 @@ jobs:
       - name: Build the HFS+ root
         run: |
           df -h /
+          sudo modprobe hfsplus || true
+          ls /lib/modules/$(uname -r)/kernel/fs/hfsplus/ 2>/dev/null || echo "no hfsplus module dir"
           tools/mkiosroot.sh dmgs/fs.dmg dmgs/sys.dmg dmgs/app.dmg ios16-root.img "${{ inputs.size }}"
           ls -la ios16-root.img
 
