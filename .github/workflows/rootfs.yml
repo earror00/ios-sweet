@@ -1,0 +1,93 @@
+name: rootfs
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipsw_url:
+        description: full URL of the iPhone10,3 iOS 16.7.16 (20H392) IPSW
+        default: "https://updates.cdn-apple.com/2025FallFCS/fullrestores/122-77006/1158E502-D76D-4226-AA06-ED5E30CD1111/iPhone10,3,iPhone10,6_16.7.16_20H392_Restore.ipsw"
+      size:
+        description: HFS+ root image size
+        default: "16G"
+
+concurrency:
+  group: rootfs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deps
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q hfsprogs rsync android-sdk-libsparse-utils \
+            libfuse3-dev libbz2-dev liblzfse-dev libutf8proc-dev cmake ninja-build
+          git clone --recursive --depth 1 https://github.com/apfs-fuse/apfs-fuse /tmp/apfs-fuse
+          cmake -S /tmp/apfs-fuse -B /tmp/apfs-fuse/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/apfs-fuse/build -j
+          sudo cp /tmp/apfs-fuse/build/apfs-fuse /usr/local/bin/
+          apfs-fuse -h 2>&1 | head -2 || true
+          which mkfs.hfsplus fsck.hfsplus img2simg rsync
+
+      - name: Download IPSW
+        run: |
+          curl -sfL -o ipsw.ipsw "${{ inputs.ipsw_url }}"
+          ls -la ipsw.ipsw
+
+      - name: Extract the three restore DMGs
+        run: |
+          python3 - <<'EOF'
+          import zipfile
+          z = zipfile.ZipFile('ipsw.ipsw')
+          dmgs = [(i.file_size, i.filename) for i in z.infolist() if i.filename.endswith('.dmg')]
+          dmgs.sort(reverse=True)
+          for s, n in dmgs:
+              print(f'{s/1e9:6.2f} GB  {n}')
+          assert len(dmgs) >= 3, f'only {len(dmgs)} dmg files'
+          assert dmgs[0][0] > dmgs[1][0] > dmgs[2][0], 'dmg sizes must be distinct'
+          for out, (_, name) in zip(('os.dmg', 'sysos.dmg', 'appos.dmg'), dmgs[:3]):
+              with z.open(name) as src, open(out, 'wb') as dst:
+                  while True:
+                      chunk = src.read(1 << 22)
+                      if not chunk:
+                          break
+                      dst.write(chunk)
+          EOF
+          rm ipsw.ipsw
+          ls -la *.dmg
+
+      - name: Build the HFS+ root
+        run: |
+          df -h /
+          tools/mkiosroot.sh os.dmg sysos.dmg appos.dmg ios16-root.img "${{ inputs.size }}"
+          ls -la ios16-root.img
+
+      - name: Apply bring-up tweaks
+        run: |
+          sudo fsck.hfsplus -fy ios16-root.img | tail -3 || true
+          sudo mkdir -p /mnt/iosroot
+          sudo mount -t hfsplus -o loop,force ios16-root.img /mnt/iosroot
+          sudo python3 tools/sweet-root-tweaks.py /mnt/iosroot
+          df -h /mnt/iosroot
+          sudo umount /mnt/iosroot
+          sudo fsck.hfsplus -fy ios16-root.img | tail -3 || true
+          rm -f os.dmg sysos.dmg appos.dmg
+
+      - name: Sparse image + checksum
+        run: |
+          img2simg ios16-root.img ios16-root.simg
+          sha256sum ios16-root.img ios16-root.simg | tee SHA256SUMS
+          ls -la ios16-root.simg
+          df -h /
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-root
+          path: |
+            ios16-root.simg
+            SHA256SUMS
+          retention-days: 7

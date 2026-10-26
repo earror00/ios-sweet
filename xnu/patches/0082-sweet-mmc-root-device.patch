@@ -43,7 +43,7 @@ new file mode 100644
 +++ b/bsd/dev/sweet_mmc.c
 @@ -0,0 +1,812 @@
 +/*
-+ * SWEET internal eMMC root device (read-only).
++ * SWEET internal eMMC root device.
 + *
 + * platina (SDM660) boots from eMMC; the SDHC1 host (sdhci@c0c4000,
 + * qcom,sdhci-msm-v5) and its clocks are assumed to be left usable by the
@@ -55,9 +55,8 @@ new file mode 100644
 + * cleaned/invalidated around every transfer. It finds one GPT partition by
 + * name (boot-arg mmcroot=, default "userdata") and exposes it as the BSD
 + * disk mmcroot0 (rmmcroot0), 512-byte logical sectors. Root on it with
-+ * rd=mmcroot0.
-+ *
-+ * Writes are refused (bring-up first, like sweet_ufs was).
++ * rd=mmcroot0; mount read-write with the rootrw=1 boot-arg (patch 0031).
++ * Writes go through CMD23 (pre-erase) + CMD25 multi-block, like reads.
 + */
 +#if defined(ARM64_BOARD_CONFIG_SWEET)
 +#include <sys/param.h>
@@ -349,6 +348,24 @@ new file mode 100644
 +	return error;
 +}
 +
++/* CMD23 with pre-erase, then CMD25. The card needs CMD13-ready before reuse. */
++static int
++mmc_write_blocks(uint64_t lba, uint32_t count, uint32_t bounce_off)
++{
++	int error = mmc_cmd(23, (1u << 31) | count, RSP_48, false, false, 0, 0, false);
++	if (!error) {
++		error = mmc_cmd(25, (uint32_t)lba, RSP_48, true, true, count,
++		    bounce_off, false);
++	}
++	if (!error) {
++		error = mmc_cmd(12, 0, RSP_48B, false, false, 0, 0, false);
++	}
++	if (!error) {
++		error = mmc_wait_ready();               /* programming time */
++	}
++	return error;
++}
++
 +static int
 +mmc_find_partition(const char *want)
 +{
@@ -497,12 +514,10 @@ new file mode 100644
 +}
 +
 +static int
-+sweet_mmc_open(__unused dev_t dev, int flags, __unused int devtype, __unused struct proc *p)
++sweet_mmc_open(__unused dev_t dev, __unused int flags, __unused int devtype,
++    __unused struct proc *p)
 +{
-+	if (!sm.ready) {
-+		return ENXIO;
-+	}
-+	return (flags & FWRITE) ? EROFS : 0;
++	return sm.ready ? 0 : ENXIO;
 +}
 +
 +static int
@@ -539,19 +554,40 @@ new file mode 100644
 +	}
 +
 +	lck_mtx_lock(&sweet_mmc_lock);
-+	for (uint32_t done = 0; done < count;) {
-+		uint64_t pos = off + done;
-+		uint64_t lba = pos / MMC_BLOCK;
-+		uint32_t skip = (uint32_t)(pos % MMC_BLOCK);
-+		uint32_t want = MIN(count - done, SDMA_CHUNK - skip);
-+		uint32_t blocks = (skip + want + MMC_BLOCK - 1) / MMC_BLOCK;
-+		error = mmc_read_blocks(sm.first_block + lba, blocks, DMA_BOUNCE);
-+		if (error) {
-+			break;
++	if (buf_flags(bp) & B_READ) {
++		for (uint32_t done = 0; done < count;) {
++			uint64_t pos = off + done;
++			uint64_t lba = pos / MMC_BLOCK;
++			uint32_t skip = (uint32_t)(pos % MMC_BLOCK);
++			uint32_t want = MIN(count - done, SDMA_CHUNK - skip);
++			uint32_t blocks = (skip + want + MMC_BLOCK - 1) / MMC_BLOCK;
++			error = mmc_read_blocks(sm.first_block + lba, blocks, DMA_BOUNCE);
++			if (error) {
++				break;
++			}
++			memcpy(vaddr + done, (const void *)(sm.dma + DMA_BOUNCE + skip), want);
++			done += want;
++			buf_setresid(bp, count - done);
 +		}
-+		memcpy(vaddr + done, (const void *)(sm.dma + DMA_BOUNCE + skip), want);
-+		done += want;
-+		buf_setresid(bp, count - done);
++	} else {
++		for (uint32_t done = 0; done < count;) {
++			uint64_t pos = off + done;
++			uint64_t lba = pos / MMC_BLOCK;
++			uint32_t skip = (uint32_t)(pos % MMC_BLOCK);
++			uint32_t want = MIN(count - done, SDMA_CHUNK - skip);
++			if (skip) {
++				error = EINVAL;         /* unaligned chunk edge */
++				break;
++			}
++			memcpy((void *)(sm.dma + DMA_BOUNCE), vaddr + done, want);
++			error = mmc_write_blocks(sm.first_block + lba, want / MMC_BLOCK,
++			    DMA_BOUNCE);
++			if (error) {
++				break;
++			}
++			done += want;
++			buf_setresid(bp, count - done);
++		}
 +	}
 +	lck_mtx_unlock(&sweet_mmc_lock);
 +	buf_unmap(bp);
@@ -590,13 +626,13 @@ new file mode 100644
 +		*o = sm.nblocks * MMC_BLOCK / sm.secsize;
 +		return 0;
 +	case DKIOCISWRITABLE:
-+		*f = 0;
++		*f = 1;
 +		return 0;
 +	case DKIOCGETMAXBLOCKCOUNTREAD:
 +		*o = SDMA_CHUNK / sm.secsize;
 +		return 0;
 +	case DKIOCGETMAXBLOCKCOUNTWRITE:
-+		*o = 0;
++		*o = SDMA_CHUNK / sm.secsize;
 +		return 0;
 +	case DKIOCGETMAXSEGMENTCOUNTREAD:
 +	case DKIOCGETMAXSEGMENTCOUNTWRITE:
@@ -632,9 +668,9 @@ new file mode 100644
 +}
 +
 +static int
-+sweet_mmc_write(__unused dev_t dev, __unused struct uio *uio, __unused int ioflag)
++sweet_mmc_write(dev_t dev, struct uio *uio, __unused int ioflag)
 +{
-+	return EROFS;
++	return physio(sweet_mmc_strategy, NULL, dev, B_WRITE, minphys, uio, (int)sm.secsize);
 +}
 +
 +static const struct bdevsw sweet_mmc_bdevsw = {
@@ -740,7 +776,7 @@ new file mode 100644
 +	devfs_make_node(sm.bdev, DEVFS_BLOCK, UID_ROOT, GID_OPERATOR, 0640, "mmcroot0");
 +	devfs_make_node(makedev(sm.cmajor, 0), DEVFS_CHAR, UID_ROOT, GID_OPERATOR, 0640, "rmmcroot0");
 +	sm.ready = true;
-+	printf("SWEET MMC: \"%s\": first block 0x%llx, %llu MiB, %s, read-only\n",
++	printf("SWEET MMC: \"%s\": first block 0x%llx, %llu MiB, %s\n",
 +	    want, sm.first_block, sm.nblocks * MMC_BLOCK >> 20,
 +	    sm.sector_mode ? "sector mode" : "byte mode");
 +	return 0;
