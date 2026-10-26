@@ -30,8 +30,20 @@ jobs:
           cmake -S /tmp/apfs-fuse -B /tmp/apfs-fuse/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/apfs-fuse/build -j
           sudo cp /tmp/apfs-fuse/build/apfs-fuse /usr/local/bin/
+          # lzfse CLI: Apple recompresses older IPSWs on the CDN; the OS dmg
+          # comes out as an lzfse stream ('bvxn' magic) and needs decompressing.
+          git clone --depth 1 https://github.com/lzfse/lzfse /tmp/lzfse
+          cmake -S /tmp/lzfse -B /tmp/lzfse/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/lzfse/build -j
+          sudo cp /tmp/lzfse/build/bin/lzfse /usr/local/bin/
+          # ipsw tool: identifies the fs/sys/app dmgs via BuildManifest (a size
+          # heuristic mispicks them).
+          IPSW_URL=$(curl -fsSL https://api.github.com/repos/blacktop/ipsw/releases/latest \
+            | grep -o 'https://[^"]*linux_x86_64.tar.gz' | head -1)
+          curl -fsSL "$IPSW_URL" | sudo tar xz -C /usr/local/bin ipsw
+          ipsw version
           apfs-fuse -h 2>&1 | head -2 || true
-          which mkfs.hfsplus fsck.hfsplus img2simg rsync
+          which mkfs.hfsplus fsck.hfsplus img2simg rsync lzfse
 
       - name: Download IPSW
         run: |
@@ -40,30 +52,46 @@ jobs:
 
       - name: Extract the three restore DMGs
         run: |
-          python3 - <<'EOF'
-          import zipfile
-          z = zipfile.ZipFile('ipsw.ipsw')
-          dmgs = [(i.file_size, i.filename) for i in z.infolist() if i.filename.endswith('.dmg')]
-          dmgs.sort(reverse=True)
-          for s, n in dmgs:
-              print(f'{s/1e9:6.2f} GB  {n}')
-          assert len(dmgs) >= 3, f'only {len(dmgs)} dmg files'
-          assert dmgs[0][0] > dmgs[1][0] > dmgs[2][0], 'dmg sizes must be distinct'
-          for out, (_, name) in zip(('os.dmg', 'sysos.dmg', 'appos.dmg'), dmgs[:3]):
-              with z.open(name) as src, open(out, 'wb') as dst:
-                  while True:
-                      chunk = src.read(1 << 22)
-                      if not chunk:
-                          break
-                      dst.write(chunk)
-          EOF
-          rm ipsw.ipsw
-          ls -la *.dmg
+          for kind in fs sys app; do
+            ipsw extract --dmg "$kind" -o "dmgs/$kind" ipsw.ipsw
+            f=$(find "dmgs/$kind" -type f -name '*.dmg' | head -1)
+            [ -n "$f" ] || { echo "no dmg extracted for $kind"; exit 1; }
+            mv "$f" "dmgs/$kind.dmg"
+            rm -rf "dmgs/$kind"
+          done
+          rm -f ipsw.ipsw
+          cd dmgs
+          head -c4 fs.dmg | grep -q bvxn && {
+            echo "decompressing lzfse OS dmg..."
+            lzfse -d fs.dmg fs-raw.dmg
+            mv fs-raw.dmg fs.dmg
+          } || true
+          # A koly trailer with an empty resource fork is Apple's "wrapped"
+          # marker, not a UDIF: strip it so apfs-fuse reads raw APFS.
+          size=$(stat -c%s fs.dmg)
+          [ "$(tail -c4 fs.dmg | xxd -p)" = "6b6f6c79" ] && {
+            rsrc_len=$(python3 -c "
+import struct, sys
+f = open('fs.dmg', 'rb')
+f.seek($size - 512)
+k = f.read(512)
+print(struct.unpack_from('>Q', k, 0x30)[0])")
+            [ "$rsrc_len" = "0" ] && { truncate -s $((size - 512)) fs.dmg; echo "stripped koly trailer"; }
+          } || true
+          for f in fs.dmg sys.dmg app.dmg; do
+            printf '%s: ' "$f"; head -c4 "$f" | xxd -p
+          done
+          # Every image must be a raw APFS container now (checksum + NXSB@0x20).
+          for f in fs.dmg sys.dmg app.dmg; do
+            [ "$(head -c4 "$f" | xxd -p)" = "85216704" ] || { echo "$f: not raw APFS"; exit 1; }
+          done
+          cd ..
+          ls -la dmgs/
 
       - name: Build the HFS+ root
         run: |
           df -h /
-          tools/mkiosroot.sh os.dmg sysos.dmg appos.dmg ios16-root.img "${{ inputs.size }}"
+          tools/mkiosroot.sh dmgs/fs.dmg dmgs/sys.dmg dmgs/app.dmg ios16-root.img "${{ inputs.size }}"
           ls -la ios16-root.img
 
       - name: Apply bring-up tweaks
