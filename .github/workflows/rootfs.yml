@@ -34,16 +34,11 @@ jobs:
           # heuristic mispicks them). Pinned release, no API rate limits.
           curl -fsSL https://github.com/blacktop/ipsw/releases/download/v3.1.739/ipsw_3.1.739_linux_x86_64.tar.gz \
             | sudo tar xz -C /usr/local/bin ipsw
-          # Apple's compressed OS image is thousands of independent lzfse
-          # streams back to back; pyliblzfse stops after the first, so use a
-          # small multi-stream decoder around the reference decoder state
-          # (tools/lzfse-multistream.c + vendored decode-only lzfse sources).
-          gcc -O2 -I tools/lzfse-src -o /usr/local/bin/lzfse-multistream tools/lzfse-multistream.c \
-            tools/lzfse-src/lzfse_decode.c tools/lzfse-src/lzfse_decode_base.c \
-            tools/lzfse-src/lzfse_fse.c tools/lzfse-src/lzvn_decode_base.c
+          # pyliblzfse: the OS image's chunks are independent lzfse streams
+          pip3 install --break-system-packages pyliblzfse
           ipsw version
           apfs-fuse -h 2>&1 | head -2 || true
-          which mkfs.hfsplus fsck.hfsplus img2simg rsync lzfse-multistream
+          which mkfs.hfsplus fsck.hfsplus img2simg rsync
 
       - name: Download IPSW
         run: |
@@ -62,8 +57,8 @@ jobs:
           rm -f ipsw.ipsw
           cd dmgs
           head -c4 fs.dmg | grep -q bvxn && {
-            echo "decoding segmented-lzfse OS dmg..."
-            lzfse-multistream fs.dmg fs-dec.dmg
+            echo "decoding chunked-lzfse OS dmg via its blkx table..."
+            python3 "$GITHUB_WORKSPACE/tools/decode_dmg.py" fs.dmg fs-dec.dmg
             mv fs-dec.dmg fs.dmg
           } || true
           # The decoded image is either a bare APFS container or a GPT disk
