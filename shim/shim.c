@@ -60,6 +60,7 @@
 static inline uint32_t rd32(uintptr_t a) { return *(volatile uint32_t *)a; }
 static inline uint64_t rd64(uintptr_t a) { return *(volatile uint64_t *)a; }
 static inline void wr32(uintptr_t a, uint32_t v) { *(volatile uint32_t *)a = v; }
+static inline void wr64(uintptr_t a, uint64_t v) { *(volatile uint64_t *)a = v; }
 static inline void wr8(uintptr_t a, uint8_t v) { *(volatile uint8_t *)a = v; }
 
 extern char secondary_entry[];
@@ -408,11 +409,51 @@ void shim_main(uint64_t dtb)
 		}
 	}
 	{
+		/*
+		 * Qualcomm's PSCI does not reliably pass context_id in x0, and the
+		 * A73's cache-held writes may not have reached DRAM for the A55's
+		 * cold fetch. Build a literal-loading trampoline at the (now free)
+		 * payload blob start, clean both regions to the interconnect, and
+		 * start the A55 on the trampoline.
+		 */
 		uint64_t entry = loader_entry_pa();
 		uint64_t ba = loader_bootargs_pa();
+		uint64_t tramp = loader_ramdisk_start();
+		uint64_t rd_end = loader_ramdisk_end();
+		static const uint32_t stub[4] = {
+			0x58000080U,	/* ldr x0, [pc, #16] -> ba */
+			0x580000A1U,	/* ldr x1, [pc, #24] -> entry */
+			0xD61F0020U,	/* br x1 */
+			0xD503201FU,	/* nop */
+		};
+		for (int i = 0; i < 4; i++)
+			wr32(tramp + 4 * i, stub[i]);
+		wr64(tramp + 16, ba);
+		wr64(tramp + 24, entry);
+		__asm__ volatile(
+		    "dc cvac, %0
+"
+		    "dc cvac, %1
+"
+		    "dsb sy
+"
+		    "ic iallu
+"
+		    "dsb sy
+"
+		    "isb
+"
+		    :: "r"(tramp), "r"(tramp + 16) : "memory");
+		/* clean the kernel image and the payload blob to DRAM */
+		for (uint64_t a = entry & ~63UL; a < entry + 0x2000000UL; a += 64)
+			__asm__ volatile("dc cvac, %0" :: "r"(a) : "memory");
+		for (uint64_t a = tramp; a < rd_end; a += 64)
+			__asm__ volatile("dc cvac, %0" :: "r"(a) : "memory");
+		__asm__ volatile("dsb sy" ::: "memory");
+
+		con_hex2("TRAMP", "at=", (uint32_t)(tramp >> 32), "lo=", (uint32_t)tramp);
 		con_hex2("CPUON", "entry=", (uint32_t)(entry >> 32), "lo=", (uint32_t)entry);
-		con_hex2("CPUON", "ba=", (uint32_t)(ba >> 32), "lo=", (uint32_t)ba);
-		uint64_t ret = smc(PSCI_CPU_ON, 0x100UL, entry, ba);
+		uint64_t ret = smc(PSCI_CPU_ON, 0x100UL, tramp, 0);
 		con_hex2("CPUON", "ret=", (uint32_t)ret, "mpidr=", 0x100);
 		if (ret != 0) {
 			con_str("CPUON", "failed, parking");

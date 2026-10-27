@@ -79,7 +79,7 @@ typedef void (*xnu_entry_t)(uint64_t boot_args_pa);
 /* State shared between loader_prepare (does the work) and the callers that
  * jump (loader_boot on sweet, or the PLATINA PSCI handoff in shim.c). */
 static const struct payload *lb_p;
-static uint64_t lb_delta, lb_adt_pa, lb_ba_pa, lb_entry_pa;
+static uint64_t lb_delta, lb_adt_pa, lb_ba_pa, lb_entry_pa, lb_rd_start, lb_rd_end;
 
 const char *loader_prepare(uintptr_t dtb)
 {
@@ -146,6 +146,8 @@ const char *loader_prepare(uintptr_t dtb)
 	__asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");
 
 	lb_p = p;
+	lb_rd_start = rd_start;
+	lb_rd_end = rd_end;
 	lb_delta = pa_of_va_base;
 	lb_adt_pa = adt_pa;
 	lb_ba_pa = ba_pa;
@@ -162,6 +164,16 @@ uint64_t loader_entry_pa(void)
 uint64_t loader_bootargs_pa(void)
 {
 	return lb_ba_pa;
+}
+
+uint64_t loader_ramdisk_start(void)
+{
+	return lb_rd_start;
+}
+
+uint64_t loader_ramdisk_end(void)
+{
+	return lb_rd_end;
 }
 
 const char *loader_boot(uintptr_t dtb)

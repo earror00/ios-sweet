@@ -10,3 +10,5 @@ const char *loader_boot(uintptr_t dtb);
 const char *loader_prepare(uintptr_t dtb);
 uint64_t loader_entry_pa(void);      /* physical kernel entry */
 uint64_t loader_bootargs_pa(void);   /* physical boot_args */
+uint64_t loader_ramdisk_start(void); /* payload blob start (free after prepare) */
+uint64_t loader_ramdisk_end(void);
