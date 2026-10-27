@@ -76,7 +76,12 @@ static int magic_ok(const char *m)
 
 typedef void (*xnu_entry_t)(uint64_t boot_args_pa);
 
-const char *loader_boot(uintptr_t dtb)
+/* State shared between loader_prepare (does the work) and the callers that
+ * jump (loader_boot on sweet, or the PLATINA PSCI handoff in shim.c). */
+static const struct payload *lb_p;
+static uint64_t lb_delta, lb_adt_pa, lb_ba_pa, lb_entry_pa;
+
+const char *loader_prepare(uintptr_t dtb)
 {
 	uint64_t rd_start, rd_end;
 
@@ -92,7 +97,8 @@ const char *loader_boot(uintptr_t dtb)
 		return "bad payload header";
 
 	uint64_t pa_of_va_base = p->phys_base - p->virt_base;	/* pa = va + this */
-	con_hex2("PHYS", "base=", p->phys_base, "size=", p->mem_size);
+	con_hex2("PHYS", "base=", (uint32_t)(p->phys_base >> 32), "lo=", (uint32_t)p->phys_base);
+	con_hex2("PHYS", "size=", (uint32_t)p->mem_size, "end=", (uint32_t)((p->phys_base + p->mem_size) >> 32));
 	con_hex("VIRT", p->virt_base);
 	con_hex("ENTRY", p->entry_va);
 
@@ -136,12 +142,36 @@ const char *loader_boot(uintptr_t dtb)
 	ba->memSizeActual = p->mem_size;
 	con_hex2("BOOTARG", "pa=", ba_pa, "top=", top);
 
-	uintptr_t entry_pa = p->entry_va + pa_of_va_base;
-	con_hex("JUMP", entry_pa);
-	con_str("XNU", "jumping (fbcon clears screen)");
-
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */
 	__asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");
-	((xnu_entry_t)entry_pa)(ba_pa);
+
+	lb_p = p;
+	lb_delta = pa_of_va_base;
+	lb_adt_pa = adt_pa;
+	lb_ba_pa = ba_pa;
+	lb_entry_pa = p->entry_va + pa_of_va_base;
+	con_hex("JUMP", lb_entry_pa);
+	return "";	/* success */
+}
+
+uint64_t loader_entry_pa(void)
+{
+	return lb_entry_pa;
+}
+
+uint64_t loader_bootargs_pa(void)
+{
+	return lb_ba_pa;
+}
+
+const char *loader_boot(uintptr_t dtb)
+{
+	const char *why = loader_prepare(dtb);
+	if (why[0])
+		return why;
+
+	uintptr_t entry_pa = lb_entry_pa;
+	con_str("XNU", "jumping (fbcon clears screen)");
+	((xnu_entry_t)entry_pa)(lb_ba_pa);
 	return "xnu returned";
 }

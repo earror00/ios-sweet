@@ -389,6 +389,42 @@ void shim_main(uint64_t dtb)
 	/* An xnu payload in the ramdisk means: boot it (MMU stays off). */
 	stage = "loader";
 	con_clear(RED);
+#ifdef PLATINA
+	/*
+	 * platina's boot core is a Cortex-A73, and the A73 (ARMv8.0 big core)
+	 * has no 16 KB translation granule (ID_AA64MMFR0.TGran16 = 0) - the
+	 * 16K-page XNU cannot ever enable its MMU on it. The four Cortex-A55s
+	 * (MPIDR 0x100-0x103) DO support 16K: wake the first one with PSCI
+	 * CPU_ON, hand it (entry, boot_args) directly, and park the A73s.
+	 */
+	con_str("SHIM", "platina: booting xnu on the A55 cluster");
+	{
+		const char *why = loader_prepare(dtb);
+		con_str("LOADER", why);
+		if (why[0] != 0) {
+			con_str("LOADER", "prepare failed, parking");
+			for (;;)
+				__asm__ volatile("wfe");
+		}
+	}
+	{
+		uint64_t entry = loader_entry_pa();
+		uint64_t ba = loader_bootargs_pa();
+		con_hex2("CPUON", "entry=", (uint32_t)(entry >> 32), "lo=", (uint32_t)entry);
+		con_hex2("CPUON", "ba=", (uint32_t)(ba >> 32), "lo=", (uint32_t)ba);
+		uint64_t ret = smc(PSCI_CPU_ON, 0x100UL, entry, ba);
+		con_hex2("CPUON", "ret=", (uint32_t)ret, "mpidr=", 0x100);
+		if (ret != 0) {
+			con_str("CPUON", "failed, parking");
+			for (;;)
+				__asm__ volatile("wfe");
+		}
+		con_str("CPUON", "a55 up; a73 parked");
+	}
+	for (;;)
+		__asm__ volatile("wfe");
+#else
+	con_clear(RED);
 	con_str("SHIM", "sweet milestone 4: xnu loader");
 	con_skip();
 	const char *why = loader_boot(dtb);
@@ -444,4 +480,5 @@ void shim_main(uint64_t dtb)
 
 	stage = "done";
 	reset(40);
+#endif /* PLATINA */
 }

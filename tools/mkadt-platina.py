@@ -124,30 +124,32 @@ def build(seed=None, qemu=False, highmem=False):
         # lp-sip1: unauthenticated (unsealed) root.
         node('asmb', [ph(), ('lp-sip0', u64(0x6f)), ('lp-sip1', u32(1))])])
 
-    # platina SMP: 4 Cortex-A73 (perfcl, MPIDR Aff1=0) first, then 4 Cortex-A55
-    # (pwrcl, Aff1=1). The kernel boots the first cpus=N in DT order, so the
-    # default cpus=4 is a homogeneous A73 cluster; heterogeneous SMP is only
-    # needed once the A55s are wanted (boot-arg cpus=8).
+    # platina runs the kernel on the 4 Cortex-A55s ONLY (MPIDR 0x100-0x103,
+    # cluster Aff1=1): the boot core is a Cortex-A73, and ARMv8.0 big cores
+    # (A57/A72/A73) have no 16 KB translation granule (ID_AA64MMFR0.TGran16=0),
+    # so the 16K-page XNU can never enable its MMU there. The shim wakes the
+    # first A55 via PSCI CPU_ON and hands it (entry, boot_args) directly; the
+    # kernel then starts the remaining three A55s (cpus=4). The A73s are
+    # deliberately absent from this tree and never started.
     # QEMU keeps its original single-CPU tree: its MPIDRs differ from platina.
     cpu_nodes = []
-    ncpu = 1 if qemu else 8
+    ncpu = 1 if qemu else 4
     for core in range(ncpu):
-        cluster = 0 if core < 4 else 1  # 0-3 = A73 (perfcl), 4-7 = A55 (pwrcl)
         cpu_nodes.append(node(f'cpu{core}', [
             ph(),
             ('device_type', cstr('cpu')),
             ('compatible', cstr('qcom,kryo260') + cstr('ARM,v8')),
-            ('reg', u32((cluster << 8) | (core % 4))),  # MPIDR Aff1:Aff0
+            ('reg', u32(0x100 | core)),  # MPIDR Aff1:Aff0 of the A55 cluster
             ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
-            ('cluster-id', u32(cluster)),
+            ('cluster-id', u32(0)),
             ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP
-            ('die-cluster-id', u32(cluster)),
-            ('cluster-core-id', u32(core % 4)),
-            ('l2-cache-id', u32(cluster)),  # one L2 per cluster
+            ('die-cluster-id', u32(0)),
+            ('cluster-core-id', u32(core)),
+            ('l2-cache-id', u32(0)),  # the A55s share one L2
             ('l3-cache-id', u32(0)),
             ('state', cstr('running' if core == 0 else 'stopped')),
             ('timebase-frequency', u32(timebase)),
-            ('clock-frequency', u32(1843200000 if cluster == 0 else 1612800000)),
+            ('clock-frequency', u32(1612800000)),
             ('bus-frequency', u32(100000000)),
             ('memory-frequency', u32(1332000000)),
             ('peripheral-frequency', u32(timebase)),
