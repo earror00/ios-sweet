@@ -431,18 +431,12 @@ void shim_main(uint64_t dtb)
 		wr64(tramp + 16, ba);
 		wr64(tramp + 24, entry);
 		__asm__ volatile(
-		    "dc cvac, %0
-"
-		    "dc cvac, %1
-"
-		    "dsb sy
-"
-		    "ic iallu
-"
-		    "dsb sy
-"
-		    "isb
-"
+		    "dc cvac, %0\n"
+		    "dc cvac, %1\n"
+		    "dsb sy\n"
+		    "ic iallu\n"
+		    "dsb sy\n"
+		    "isb\n"
 		    :: "r"(tramp), "r"(tramp + 16) : "memory");
 		/* clean the kernel image and the payload blob to DRAM */
 		for (uint64_t a = entry & ~63UL; a < entry + 0x2000000UL; a += 64)
