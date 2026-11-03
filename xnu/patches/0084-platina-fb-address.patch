@@ -1,4 +1,3 @@
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 --- a/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
-
