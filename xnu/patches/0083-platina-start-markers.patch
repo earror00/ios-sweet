@@ -1,7 +1,6 @@
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 --- a/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
-
 @@ -538,6 +538,17 @@
  	MSR_VBAR_EL1_X0
  
