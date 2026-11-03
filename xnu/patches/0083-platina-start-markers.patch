@@ -1,3 +1,75 @@
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 --- a/osfmk/arm64/start.s
 +++ b/osfmk/arm64/start.s
+
+@@ -538,6 +538,17 @@
+ 	MSR_VBAR_EL1_X0
+ 
+ 
++	ldr	x4, [x20, #0x28]	/* Video.baseAddr */
++	MOV64	x6, 0x6000
++	add	x4, x4, x6
++	MOV64	x5, 0xff00ff00
++	mov	w6, #5400
++Lplatina_m1:
++	str	w5, [x4], #4
++	subs	w6, w6, #1
++	b.ne	Lplatina_m1
++	dsb	sy
++
+ 	// Get the kernel memory parameters from the boot args
+ 	ldr		x22, [x20, BA_VIRT_BASE]			// Get the kernel virt base
+ 	ldr		x23, [x20, BA_PHYS_BASE]			// Get the kernel phys base
+@@ -573,12 +584,34 @@
+ 	sub		x0, x0, x23
+ 	msr		SPSel, #0							// Set SP_EL0 to interrupt stack
+ 	mov		sp, x0
++	ldr	x4, [x20, #0x28]	/* Video.baseAddr */
++	MOV64	x6, 0xc000
++	add	x4, x4, x6
++	MOV64	x5, 0xffff0000
++	mov	w6, #5400
++Lplatina_m2:
++	str	w5, [x4], #4
++	subs	w6, w6, #1
++	b.ne	Lplatina_m2
++	dsb	sy
++
+ 
+ 	// Load address to the C init routine into link register
+ 	adrp	lr, EXT(arm_init)@page
+ 	add		lr, lr, EXT(arm_init)@pageoff
+ 	add		lr, lr, x22							// Convert to KVA
+ 	sub		lr, lr, x23
++	ldr	x4, [x20, #0x28]	/* Video.baseAddr */
++	MOV64	x6, 0x12000
++	add	x4, x4, x6
++	MOV64	x5, 0xff0000ff
++	mov	w6, #5400
++Lplatina_m3:
++	str	w5, [x4], #4
++	subs	w6, w6, #1
++	b.ne	Lplatina_m3
++	dsb	sy
++
+ 
+ 	/*
+ 	 * Set up the bootstrap page tables with a single block entry for the V=P
+@@ -600,6 +633,17 @@
+ 	str		x0, [x1], #(1 << TTE_SHIFT)			//   Invalidate and advance
+ 	subs	x2, x2, #1							//   entries--
+ 	b.ne	Linvalidate_bootstrap				// } while (entries != 0)
++	ldr	x4, [x20, #0x28]	/* Video.baseAddr */
++	MOV64	x6, 0x18000
++	add	x4, x4, x6
++	MOV64	x5, 0xffffff00
++	mov	w6, #5400
++Lplatina_m4:
++	str	w5, [x4], #4
++	subs	w6, w6, #1
++	b.ne	Lplatina_m4
++	dsb	sy
++
+ 
+ 	/*
+ 	 * In order to reclaim memory on targets where TZ0 (or some other entity)
