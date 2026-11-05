@@ -57,9 +57,10 @@ jobs:
           # PLATINA: firehose compiles with Apple's default arm64 target
           # (armv8.4-A => LSE atomics), and the Silver cores trap LDADD: boot #15
           # died in ___firehose_buffer_tracepoint_flush with instr=f8280128.
-          # Reissue the xcconfig's OTHER_CFLAGS verbatim plus the v8.0 baseline -
-          # command-line build settings override the xcconfig.
-          sed -i '' 's|xcodebuild install -target libfirehose_kernel -sdk macosx ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64" |xcodebuild install -target libfirehose_kernel -sdk macosx ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64" OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed -march=armv8-a+nolse" |' dxb/build.sh
+          # Build only the arm64 slice (the x86_64 slice would also reject the
+          # -march flag) and reissue the xcconfig's OTHER_CFLAGS verbatim plus the
+          # v8.0 baseline - command-line build settings override the xcconfig.
+          sed -i '' 's|xcodebuild install -target libfirehose_kernel -sdk macosx ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64" |xcodebuild install -target libfirehose_kernel -sdk macosx ARCHS="arm64" VALID_ARCHS="arm64" OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed -march=armv8-a+nolse" |' dxb/build.sh
           grep -c 'march=armv8-a+nolse' dxb/build.sh
           ls dxb/patches
 
