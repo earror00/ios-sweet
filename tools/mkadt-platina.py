@@ -29,9 +29,12 @@ HIGH_MEM_SIZE = 0xfd8c0000
 # /arm-io children are relative to this; it must not be 0 (serial_init bails)
 SOC_BASE = 0x01000000
 
-# platina == sweet: GICv3 at the same addresses, same vtimer PPI, 19.2 MHz.
+# GICv3 (interrupt-controller@17a00000 in platina's stock boot.img DTB):
+# reg = <0x17A00000 0x10000 0x17B00000 0x100000>, redistributor-stride 0x20000.
+# NOTE: the GICR base differs from sweet (SM7150, 0x17a60000)! Touching the
+# hole between GICD and GICR on SDM660 stalls the interconnect forever.
 GICD, GICD_SIZE = 0x17a00000, 0x10000
-GICR, GICR_SIZE = 0x17a60000, 0x100000
+GICR, GICR_SIZE = 0x17b00000, 0x100000
 # ABL splash framebuffer (cont_splash_mem 0x9d400000, 0x23ff000); panel 1080x2280
 FB, FB_SIZE = 0x9d400000, 0x2400000
 SWEET_ECID = 0x5357454554000001  # 'SWEET' + 1, synthetic
