@@ -137,12 +137,16 @@ def build(seed=None, qemu=False, highmem=False):
     # QEMU keeps its original single-CPU tree: its MPIDRs differ from platina.
     cpu_nodes = []
     ncpu = 1 if qemu else 4
+    # QEMU virt wires MPIDR 0x0.. (flat), the phone's A55 cluster sits at
+    # MPIDR 0x100..0x103 (Aff1=1). ml_get_cpu_number maps MPIDR through this
+    # reg property, so the qemu tree must advertise what QEMU actually reports.
+    base_mpidr = 0x000 if qemu else 0x100
     for core in range(ncpu):
         cpu_nodes.append(node(f'cpu{core}', [
             ph(),
             ('device_type', cstr('cpu')),
             ('compatible', cstr('qcom,kryo260') + cstr('ARM,v8')),
-            ('reg', u32(0x100 | core)),  # MPIDR Aff1:Aff0 of the A55 cluster
+            ('reg', u32(base_mpidr | core)),  # MPIDR Aff1:Aff0
             ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
             ('cluster-id', u32(0)),
             ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP

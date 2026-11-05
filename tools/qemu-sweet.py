@@ -163,8 +163,13 @@ def screen_result(screen, unknown):
 
 def qmp(sock_path, *cmds, pmemsave=None):
     """Run QEMU human-monitor commands over QMP (synchronous, unlike the echoing HMP socket)."""
-    s = socket.socket(socket.AF_UNIX)
-    s.connect(sock_path)
+    s = socket.socket(socket.AF_UNIX if hasattr(socket, 'AF_UNIX') and ':' not in sock_path
+                      else socket.AF_INET)
+    if ':' in sock_path:
+        host, port = sock_path.rsplit(':', 1)
+        s.connect((host, int(port)))
+    else:
+        s.connect(sock_path)
     f = s.makefile('rw')
     f.readline()
 
@@ -274,14 +279,15 @@ def main():
     open(f'{out}/stub.bin', 'wb').write(stub(ba_pa, entry_pa))
     print(f'phys_base={phys_base:#x} boot_args={ba_pa:#x} entry={entry_pa:#x}', file=sys.stderr)
 
-    mon = f'{out}/mon.sock'
+    mon = '127.0.0.1:4444' if not hasattr(socket, 'AF_UNIX') else f'{out}/mon.sock'
     if os.path.exists(mon):
         os.unlink(mon)
     # virt RAM starts at 0x40000000: cover the payload's RAM (mkadt.py --highmem needs 8G).
     mem_size = struct.unpack_from('<Q', payload, 0x40)[0]
     ram_gib = max(4, -(-(phys_base + mem_size - 0x40000000) // (1 << 30)))
+    qmp_spec = f'tcp:{mon},server,nowait' if ':' in mon else f'unix:{mon},server,nowait'
     cmd = ['qemu-system-aarch64', '-M', 'virt,gic-version=3', '-cpu', a.cpu, '-smp', '1', '-m', f'{ram_gib}G',
-           '-nographic', '-serial', f'file:{out}/serial.txt', '-qmp', f'unix:{mon},server,nowait',
+           '-nographic', '-serial', f'file:{out}/serial.txt', '-qmp', qmp_spec,
            '-d', 'int,guest_errors,unimp', '-D', f'{out}/qemu.log', '-no-reboot',
            '-device', f'loader,file={out}/ram.bin,addr={phys_base:#x},force-raw=on',
            '-device', f'loader,file={out}/stub.bin,addr={STUB_PA:#x},force-raw=on',
