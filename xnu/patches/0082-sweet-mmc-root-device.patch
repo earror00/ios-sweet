@@ -40,10 +40,10 @@ diff --git a/iokit/bsddev/IOKitBSDInit.cpp b/iokit/bsddev/IOKitBSDInit.cpp
  //	Now check if we are trying to root on a memory device
  //
 diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
---- a/bsd/dev/sweet_mmc.c
+new file mode 100644
+--- /dev/null
 +++ b/bsd/dev/sweet_mmc.c
-@@ -0,0 +1,757 @@
-+++ b/bsd/dev/sweet_mmc.c
+@@ -0,0 +1,756 @@
 +/*
 + * SWEET internal eMMC root device.
 + *
