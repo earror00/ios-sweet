@@ -16,7 +16,21 @@ diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
 diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
 --- a/bsd/dev/sweet_mmc.c
 +++ b/bsd/dev/sweet_mmc.c
-@@ -736,8 +736,95 @@
+@@ -37,6 +37,13 @@
+ extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
+ /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
+ extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++/* bsd/dev/sweet_ufs.c (0047) owns the ring; 0088 flushes it from here. */
++#include <machine/atomic.h>
++
++extern int hz;
++extern kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
++extern void thread_deallocate(thread_t);
++static void sweet_mmc_log_start(void);
+ 
+ /* Standard SDHCI register offsets. */
+ #define REG_SA          0x00    /* SDMA system address, 32-bit */
+@@ -735,8 +742,90 @@
  	printf("SWEET MMC: \"%s\": first block 0x%llx, %llu MiB, %s\n",
  	    want, sm.first_block, sm.nblocks * MMC_BLOCK >> 20,
  	    sm.sector_mode ? "sector mode" : "byte mode");
@@ -27,13 +41,8 @@ diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
 +/*
 + * Persistent console log ("sweetlog", see 0047). The console hook feeds
 + * sweet_ufs.c's ring; this side flushes it to the LAST 4 MiB + 4 KiB of
-+ * the eMMC partition once the root partition is known. Read it back with
-+ * tools/sweet-log-pull.sh from a recovery.
++ * the eMMC partition once the root partition is known.
 + */
-+extern char sweet_log_ring[];
-+extern uint64_t _Atomic sweet_log_total;
-+extern const uint32_t sweet_log_ring_size;
-+
 +#define SWEET_MMC_LOG_BLOCKS    (1u + 0x400000u / MMC_BLOCK)
 +
 +struct sweet_mmc_log_header {
