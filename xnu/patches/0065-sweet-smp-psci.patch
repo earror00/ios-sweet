@@ -69,14 +69,14 @@
 +	if (*(const uint32_t *)reg->getBytesNoCopy() != cpu->phys_id) {
 +		return false;
 +	}
-+	if (cpu->phys_id > 0x500 || (cpu->phys_id & 0xff) != 0 ||
++	if (cpu->phys_id > 0x500 ||
 +	    topology->num_cpus > SWEET_SMP_MAX_CPUS) {
 +		panic("SWEET CPU: invalid A55 topology cpu=%u mpidr=0x%x count=%u",
 +		    cpu->cpu_id, cpu->phys_id, topology->num_cpus);
  	}
  	if (!IOCPU::start(provider)) {
  		return false;
-@@ -77,21 +106,75 @@
+@@ -77,21 +106,86 @@
  		panic("SWEET CPU: PMI routing is not implemented");
  	}
  
@@ -121,9 +121,20 @@
 +		}
 +		IOSleep(1);
 +	}
-+	/* The supplied ADT has cpu0 as the boot CPU and ascending A55 nodes. */
-+	if (topology->boot_cpu->cpu_id != 0 || topology->boot_cpu->phys_id != 0) {
-+		panic("SWEET CPU: expected boot MPIDR 0 and logical CPU 0");
++	/* Boot CPU must be logical 0 and the first core of its cluster
++	 * (Aff0==0): QEMU virt 0x0, SDM660 A55 cluster 0x100. */
++	if (topology->boot_cpu->cpu_id != 0 ||
++	    (topology->boot_cpu->phys_id & 0xff) != 0) {
++		panic("SWEET CPU: boot core not at cluster base: logical=%u mpidr=0x%x",
++		    topology->boot_cpu->cpu_id, topology->boot_cpu->phys_id);
++	}
++	/* All selected CPUs must share the boot CPU's cluster. */
++	for (unsigned int i = 0; i < topology->num_cpus; i++) {
++		if ((topology->cpus[i].phys_id & ~0xffULL) !=
++		    (topology->boot_cpu->phys_id & ~0xffULL)) {
++			panic("SWEET CPU: cpu=%u mpidr=0x%x crosses clusters",
++			    i, topology->cpus[i].phys_id);
++		}
 +	}
 +	for (unsigned int i = 0; i < topology->num_cpus; i++) {
 +		SweetCPU *cpu = __atomic_load_n(&sweet_cpus[i], __ATOMIC_ACQUIRE);
@@ -303,18 +314,12 @@
  	// The cpus=N and cpumask=N boot args cannot be used simultaneously. Flag this
  	// so that we trigger a panic later in the boot process, once serial is enabled.
  	if (cpus_boot_arg_present && cpumask_boot_arg_present) {
-@@ -1077,8 +1087,14 @@
+@@ -1077,7 +1087,8 @@
  		}
  #endif
  
-+#if defined(SWEET)
-+		/* Aff1 encodes the core on SM7150, not an Apple cluster ID. */
 +		cpu->die_cluster_id = (int)ml_readprop(child, "die-cluster-id", 0);
-+		cpu->cluster_core_id = (int)ml_readprop(child, "cluster-core-id", cpu->phys_id >> 8);
-+#else
- 		cpu->die_cluster_id = (int)ml_readprop(child, "die-cluster-id", MPIDR_CLUSTER_ID(cpu->phys_id));
  		cpu->cluster_core_id = (int)ml_readprop(child, "cluster-core-id", MPIDR_CPU_ID(cpu->phys_id));
-+#endif
  
  		cluster->num_cpus++;
  		cluster->cpu_mask |= 1ULL << cpu->cpu_id;
@@ -403,7 +408,7 @@
  	 * populated, so just switch to the kernel_pmap now.
 --- a/pexpert/pexpert/arm64/SWEET.h
 +++ b/pexpert/pexpert/arm64/SWEET.h
-@@ -17,6 +17,9 @@
+@@ -17,7 +17,10 @@
  
  #define SWEET                     1
  

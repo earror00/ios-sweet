@@ -293,7 +293,7 @@ def main():
            '-device', f'loader,file={out}/stub.bin,addr={STUB_PA:#x},force-raw=on',
            '-device', f'loader,addr={STUB_PA:#x},cpu-num=0']
     if a.gdb:
-        cmd += ['-S', '-gdb', 'tcp::1234']
+        cmd += ['-S', '-gdb', 'tcp::4445']
 
     p = None
     serial_file = f'{out}/serial.txt'

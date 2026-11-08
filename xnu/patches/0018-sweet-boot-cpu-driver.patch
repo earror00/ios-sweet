@@ -2,7 +2,7 @@ diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
 new file mode 100644
 --- /dev/null
 +++ b/iokit/Kernel/arm/SweetCPU.cpp
-@@ -0,0 +1,171 @@
+@@ -0,0 +1,174 @@
 +/*
 + * Single-CPU bring-up for sweet using XNU's legacy IOCPU interface.
 + * The architected timer and SGI1 already enter through pe_fiq/sleh_irq.
@@ -141,10 +141,13 @@ new file mode 100644
 +	if (aff0 >= 16) {
 +		panic("SWEET CPU: SGI target requires unsupported range selector");
 +	}
++	/* ICC_SGI1R_EL1: Aff3 [55:48], RS=Aff1 [47:44], Aff2 [43:40],
++	 * INTID [27:24], TargetList (Aff0 mask) [23:16].  SDM660 A55s are
++	 * MPIDR 0x100+i: Aff1 routes via RS, the core via TargetList. */
 +	uint64_t sgi = (((mpidr >> 32) & 0xff) << 48) |
-+	    (((mpidr >> 16) & 0xff) << 32) |
-+	    (((mpidr >> 8) & 0xff) << 16) |
-+	    ((uint64_t)SWEET_IPI_SGI << 24) | (1ULL << aff0);
++	    (((mpidr >> 16) & 0xff) << 40) |
++	    (((mpidr >> 8) & 0xf) << 44) |
++	    ((uint64_t)SWEET_IPI_SGI << 24) | (1ULL << (16 + aff0));
 +	__builtin_arm_dsb(DSB_ISHST);
 +	__builtin_arm_wsr64("ICC_SGI1R_EL1", sgi);
 +	__builtin_arm_isb(ISB_SY);
@@ -193,7 +196,7 @@ diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
 diff --git a/iokit/conf/files.arm64 b/iokit/conf/files.arm64
 --- a/iokit/conf/files.arm64
 +++ b/iokit/conf/files.arm64
-@@ -8,3 +8,5 @@
+@@ -8,4 +8,6 @@
  
  # SWEET device-tree platform (empty translation unit on other boards)
  iokit/Kernel/arm/SweetPlatformExpert.cpp                         optional iokitcpp

@@ -145,7 +145,12 @@ def build(seed=None, qemu=False, highmem=False):
         cpu_nodes.append(node(f'cpu{core}', [
             ph(),
             ('device_type', cstr('cpu')),
-            ('compatible', cstr('qcom,kryo260') + cstr('ARM,v8')),
+            # MUST keep matching the SweetCPU / AppleKeyStore personalities'
+            # IONameMatch ('qcom,kryo470'): a mismatch means the CPU driver
+            # never starts, ml_set_max_cpus is never called and
+            # kernel_bootstrap_thread hangs forever in ml_wait_max_cpus
+            # (the "scheduler freeze" right after the quantum lines).
+            ('compatible', cstr('qcom,kryo470') + cstr('ARM,v8')),
             ('reg', u32(base_mpidr | core)),  # MPIDR Aff1:Aff0
             ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
             ('cluster-id', u32(0)),
