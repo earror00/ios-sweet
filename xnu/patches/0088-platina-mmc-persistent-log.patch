@@ -16,7 +16,7 @@ diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
 diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
 --- a/bsd/dev/sweet_mmc.c
 +++ b/bsd/dev/sweet_mmc.c
-@@ -37,6 +37,13 @@
+@@ -37,6 +37,16 @@
  extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
  /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
  extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
@@ -24,13 +24,16 @@ diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
 +#include <machine/atomic.h>
 +
 +extern int hz;
++extern char sweet_log_ring[];
++extern uint64_t _Atomic sweet_log_total;
++extern const uint32_t sweet_log_ring_size;
 +extern kern_return_t kernel_thread_start(thread_continue_t, void *, thread_t *);
 +extern void thread_deallocate(thread_t);
 +static void sweet_mmc_log_start(void);
  
  /* Standard SDHCI register offsets. */
  #define REG_SA          0x00    /* SDMA system address, 32-bit */
-@@ -735,8 +742,90 @@
+@@ -735,8 +745,90 @@
  	printf("SWEET MMC: \"%s\": first block 0x%llx, %llu MiB, %s\n",
  	    want, sm.first_block, sm.nblocks * MMC_BLOCK >> 20,
  	    sm.sector_mode ? "sector mode" : "byte mode");
