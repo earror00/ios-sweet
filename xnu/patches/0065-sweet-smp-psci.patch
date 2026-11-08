@@ -314,12 +314,18 @@
  	// The cpus=N and cpumask=N boot args cannot be used simultaneously. Flag this
  	// so that we trigger a panic later in the boot process, once serial is enabled.
  	if (cpus_boot_arg_present && cpumask_boot_arg_present) {
-@@ -1077,7 +1087,8 @@
+@@ -1077,8 +1087,14 @@
  		}
  #endif
  
++#if defined(SWEET)
++		/* Aff1 encodes the cluster on SDM660; the ADT carries the real ids. */
 +		cpu->die_cluster_id = (int)ml_readprop(child, "die-cluster-id", 0);
++		cpu->cluster_core_id = (int)ml_readprop(child, "cluster-core-id", cpu->phys_id >> 8);
++#else
+ 		cpu->die_cluster_id = (int)ml_readprop(child, "die-cluster-id", MPIDR_CLUSTER_ID(cpu->phys_id));
  		cpu->cluster_core_id = (int)ml_readprop(child, "cluster-core-id", MPIDR_CPU_ID(cpu->phys_id));
++#endif
  
  		cluster->num_cpus++;
  		cluster->cpu_mask |= 1ULL << cpu->cpu_id;
