@@ -33,7 +33,7 @@ diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
  
  /* Standard SDHCI register offsets. */
  #define REG_SA          0x00    /* SDMA system address, 32-bit */
-@@ -735,8 +745,90 @@
+@@ -735,8 +745,88 @@
  	printf("SWEET MMC: \"%s\": first block 0x%llx, %llu MiB, %s\n",
  	    want, sm.first_block, sm.nblocks * MMC_BLOCK >> 20,
  	    sm.sector_mode ? "sector mode" : "byte mode");
@@ -63,8 +63,7 @@ diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
 +	uint64_t flushed = 0, seq = 0;
 +	void *bounce = (void *)(sm.dma + DMA_BOUNCE);
 +
-+	printf("SWEET LOG: console log to the last %u KiB of the partition (block 0x%llx)
-+",
++	printf("SWEET LOG: console log to the last %u KiB of the partition (block 0x%llx)\n",
 +	    SWEET_MMC_LOG_BLOCKS * MMC_BLOCK >> 10, base);
 +	for (;;) {
 +		(void)tsleep(&sweet_mmc_log_chan, PZERO, "sweetlog", hz);
@@ -98,8 +97,7 @@ diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
 +		}
 +		lck_mtx_unlock(&sweet_mmc_lock);
 +		if (error) {
-+			printf("SWEET LOG: write failed (%d), stopping
-+", error);
++			printf("SWEET LOG: write failed (%d), stopping\n", error);
 +			return;
 +		}
 +		flushed = total;
