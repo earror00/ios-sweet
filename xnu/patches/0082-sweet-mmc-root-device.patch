@@ -43,7 +43,7 @@ diff --git a/bsd/dev/sweet_mmc.c b/bsd/dev/sweet_mmc.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/sweet_mmc.c
-@@ -0,0 +1,756 @@
+@@ -0,0 +1,782 @@
 +/*
 + * SWEET internal eMMC root device.
 + *
@@ -719,8 +719,34 @@ new file mode 100644
 +	}
 +	PE_parse_boot_argn("mmcroot", want, sizeof(want));
 +
++	printf("SWEET MMC: probing SDHCI at 0x%lx\n", (unsigned long)reg[0]);
 +	sm.regs = ml_io_map(reg[0], reg[1]);
 +	sm.secsize = DEV_BSIZE;
++
++	/* SoC-level SDCC1 gates (GCC @ 0x00900000) must be on before the
++	 * first SDHCI register read: an unclocked MMIO access hangs the AXI
++	 * bus with no error report.  The bootloader leaves the RCG muxed
++	 * (it booted from eMMC), so re-enable the two branch clocks and
++	 * wait for the apps clock to leave halt.  Offsets per the SDM660
++	 * GCC map: APPS_CBCR 0x16004, AHB_CBCR 0x16008, APPS RCG 0x1602c/30. */
++	{
++		volatile uint32_t *apps_cbcr = (volatile uint32_t *)ml_io_map(0x00916004, 4);
++		volatile uint32_t *ahb_cbcr  = (volatile uint32_t *)ml_io_map(0x00916008, 4);
++		volatile uint32_t *apps_cmd  = (volatile uint32_t *)ml_io_map(0x0091602c, 4);
++		volatile uint32_t *apps_cfg  = (volatile uint32_t *)ml_io_map(0x00916030, 4);
++		if ((*apps_cmd & 1u) == 0) {
++			/* root off: GPLL0 (~600 MHz) / 3 -> ~200 MHz */
++			*apps_cfg = 0x102;
++			*apps_cmd = (*apps_cmd & ~3u) | 0x3;	/* ROOT_EN | UPDATE */
++			while (*apps_cmd & 0x2u) { }		/* UPDATE self-clears */
++		}
++		*ahb_cbcr = 1u;
++		*apps_cbcr = 1u;
++		for (unsigned int i = 0; i < 1000000u && (*apps_cbcr & (1u << 31)); i++) {
++		}
++		printf("SWEET MMC: GCC SDCC1 gates on (cmd=%08x cfg=%08x)\n",
++		    *apps_cmd, *apps_cfg);
++	}
 +
 +	/* The host must be usable: capabilities sane, HC alive. */
 +	uint32_t cap = mmc_rd(REG_CAP);
