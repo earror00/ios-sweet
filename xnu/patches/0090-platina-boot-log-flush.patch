@@ -147,7 +147,7 @@ index 8a43dd6..0487dbd 100644
 +	printf("SWEET LOG: boot flush done (%llu bytes)\n", flushed);
 +}
 +
-+static void
++void
  sweet_mmc_log_start(void)
  {
  	uint32_t on = 1;
