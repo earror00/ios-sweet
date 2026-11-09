@@ -141,13 +141,13 @@ new file mode 100644
 +	if (aff0 >= 16) {
 +		panic("SWEET CPU: SGI target requires unsupported range selector");
 +	}
-+	/* ICC_SGI1R_EL1: Aff3 [55:48], RS=Aff1 [47:44], Aff2 [43:40],
-+	 * INTID [27:24], TargetList (Aff0 mask) [23:16].  SDM660 A55s are
-+	 * MPIDR 0x100+i: Aff1 routes via RS, the core via TargetList. */
++	/* ICC_SGI1R_EL1: Aff3 [55:48], RS [47:44], IRM [40], Aff2 [39:32],
++	 * INTID [27:24], Aff1 [23:16], TargetList (Aff0 mask) [15:0].  The
++	 * cores are Aff0 0..3, so the 16-bit TargetList covers them. */
 +	uint64_t sgi = (((mpidr >> 32) & 0xff) << 48) |
-+	    (((mpidr >> 16) & 0xff) << 40) |
-+	    (((mpidr >> 8) & 0xf) << 44) |
-+	    ((uint64_t)SWEET_IPI_SGI << 24) | (1ULL << (16 + aff0));
++	    (((mpidr >> 16) & 0xff) << 32) |
++	    (((mpidr >> 8) & 0xff) << 16) |
++	    ((uint64_t)SWEET_IPI_SGI << 24) | (1ULL << aff0);
 +	__builtin_arm_dsb(DSB_ISHST);
 +	__builtin_arm_wsr64("ICC_SGI1R_EL1", sgi);
 +	__builtin_arm_isb(ISB_SY);
