@@ -69,14 +69,15 @@ index 9271c98..4bb5330 100644
  }
  
 diff --git a/osfmk/arm64/sweet_early.h b/osfmk/arm64/sweet_early.h
-index d7a25f2..f077234 100644
+index d7a25f2..e34a699 100644
 --- a/osfmk/arm64/sweet_early.h
 +++ b/osfmk/arm64/sweet_early.h
-@@ -11,6 +11,7 @@ void sweet_early_mark(unsigned int stage, const char *label);
+@@ -9,6 +9,8 @@
+ #if defined(SWEET)
+ void sweet_early_mark(unsigned int stage, const char *label);
  void sweet_early_putc(char c);
++void sweet_early_string(const char *s);
++void sweet_early_hex(uint64_t v);
  void sweet_early_panic(const char *fmt, va_list *args);
  void sweet_early_relocate(uint64_t base);
-+void sweet_early_hex(uint64_t v);
  void sweet_early_disable(void);
- #else
- static inline void sweet_early_mark(unsigned int stage, const char *label)
