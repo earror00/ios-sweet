@@ -1,0 +1,82 @@
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index a33f045..6fb6de0 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -1848,6 +1848,24 @@ sweet_early_map_final(void)
+ 	    ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) |
+ 	    ARM_TTE_BLOCK_AF | ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX;
+ 	__asm__ volatile("dsb ishst" ::: "memory");
++	/* Bring-up: dump the final-table state while the identity
++	 * console is still live. */
++	{
++		extern void sweet_early_hex(uint64_t);
++		sweet_early_string("SWEET FBMAP va=");
++		sweet_early_hex(va);
++		sweet_early_string(" l1=");
++		sweet_early_hex(l1);
++		sweet_early_string(" l2pa=");
++		sweet_early_hex(kvtophys((vm_offset_t)l2));
++		sweet_early_string(" tte=");
++		sweet_early_hex(*slot);
++		sweet_early_string(" gphys=");
++		sweet_early_hex(gPhysBase);
++		sweet_early_string("gvirt=");
++		sweet_early_hex(gVirtBase);
++		sweet_early_putc('\n');
++	}
+ }
+ #endif
+ 
+diff --git a/osfmk/arm64/sweet_early.c b/osfmk/arm64/sweet_early.c
+index 9271c98..4bb5330 100644
+--- a/osfmk/arm64/sweet_early.c
++++ b/osfmk/arm64/sweet_early.c
+@@ -125,12 +125,36 @@ sweet_early_panic(const char *fmt, va_list *args)
+ 	__asm__ volatile("dsb sy" ::: "memory");
+ }
+ 
++void
++sweet_early_hex(uint64_t v)
++{
++	for (int i = 60; i >= 0; i -= 4) {
++		uint32_t d = (uint32_t)((v >> i) & 0xf);
++		sweet_early_putc((char)(d < 10 ? '0' + d : 'a' + d - 10));
++	}
++}
++
+ void
+ sweet_early_relocate(uint64_t base)
+ {
+ 	sweet_early_mark(8, "leaving bootstrap TTBR0");
++	volatile uint32_t *oldfb = early_fb;
+ 	early_fb = (volatile uint32_t *)(uintptr_t)base;
+ 	__asm__ volatile("dsb sy" ::: "memory");
++	/* Read-probe the alias against the identity mapping: if the
++	 * final tables did not take the BLOCK we wrote, fall back to
++	 * the identity console and say so while TTBR0 still lives. */
++	uint32_t id = oldfb[16 * 1024];
++	uint32_t al = early_fb[16 * 1024];
++	if (al != id) {
++		early_fb = oldfb;
++		sweet_early_string("SWEET EARLY: FB ALIAS BROKEN id=");
++		sweet_early_hex(id);
++		sweet_early_string(" al=");
++		sweet_early_hex(al);
++		sweet_early_putc('\n');
++		return;
++	}
+ 	sweet_early_mark(9, "kernel framebuffer VA live");
+ }
+ 
+diff --git a/osfmk/arm64/sweet_early.h b/osfmk/arm64/sweet_early.h
+index d7a25f2..f077234 100644
+--- a/osfmk/arm64/sweet_early.h
++++ b/osfmk/arm64/sweet_early.h
+@@ -11,6 +11,7 @@ void sweet_early_mark(unsigned int stage, const char *label);
+ void sweet_early_putc(char c);
+ void sweet_early_panic(const char *fmt, va_list *args);
+ void sweet_early_relocate(uint64_t base);
++void sweet_early_hex(uint64_t v);
+ void sweet_early_disable(void);
+ #else
+ static inline void sweet_early_mark(unsigned int stage, const char *label)
