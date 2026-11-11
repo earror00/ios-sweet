@@ -28,9 +28,18 @@ index a33f045..6fb6de0 100644
  #endif
  
 diff --git a/osfmk/arm64/sweet_early.c b/osfmk/arm64/sweet_early.c
-index 9271c98..4bb5330 100644
+index 9271c98..b0d4e00 100644
 --- a/osfmk/arm64/sweet_early.c
 +++ b/osfmk/arm64/sweet_early.c
+@@ -78,7 +78,7 @@ sweet_early_putc(char c)
+ 	early_col++;
+ }
+ 
+-static void
++void
+ sweet_early_string(const char *s)
+ {
+ 	while (*s) {
 @@ -125,12 +125,36 @@ sweet_early_panic(const char *fmt, va_list *args)
  	__asm__ volatile("dsb sy" ::: "memory");
  }
