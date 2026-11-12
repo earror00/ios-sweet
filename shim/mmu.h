@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 #ifdef PLATINA
-#define FB_PHYS	0x9d400000UL
+#define FB_PHYS	0x9c000000UL
 #else
 #define FB_PHYS	0x9c000000UL
 #endif

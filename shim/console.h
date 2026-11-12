@@ -3,7 +3,7 @@
 
 /* reserved-memory cont_splash_region of the booting board */
 #ifdef PLATINA
-#define FB_BASE		0x9d400000UL
+#define FB_BASE		0x9c000000UL
 #define FB_W		1080
 #define FB_H		2280
 #else

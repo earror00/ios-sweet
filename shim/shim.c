@@ -473,7 +473,7 @@ void shim_main(uint64_t dtb)
 		 * cores entering the kernel entry concurrently = early-init race
 		 * = silent death (verified by the probe sweep: all four A55s
 		 * arrived and raced). */
-		wr64(tramp + 0xa8, 0x9d400000ULL + 0x6000);	/* lit_paint: 2nd slot */
+		wr64(tramp + 0xa8, 0x9c000000ULL + 0x6000);	/* lit_paint: 2nd slot */
 		wr32(tramp + 0xe0, 0xff00ff00);			/* lit_color: green */
 		__asm__ volatile("dc cvac, %0" :: "r"(tramp + 0xa8) : "memory");
 		__asm__ volatile("dsb sy" ::: "memory");
