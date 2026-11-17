@@ -1,0 +1,71 @@
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index 2079466..0c85944 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -342,6 +342,7 @@ SECURITY_READ_ONLY_LATE(pmap_paddr_t)    avail_start;
+ SECURITY_READ_ONLY_LATE(pmap_paddr_t)    avail_end;
+ SECURITY_READ_ONLY_LATE(pmap_paddr_t)    real_avail_end;
+ SECURITY_READ_ONLY_LATE(unsigned long)   real_phys_size;
++vm_offset_t sweet_pram_va = 0;
+ SECURITY_READ_ONLY_LATE(vm_map_address_t) physmap_base = (vm_map_address_t)0;
+ SECURITY_READ_ONLY_LATE(vm_map_address_t) physmap_end = (vm_map_address_t)0;
+ 
+@@ -2213,6 +2214,33 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 	sweet_early_map_final();
+ #endif
+ 	arm_vm_physmap_init(args);
++#if defined(SWEET)
++	/* The panic region (pram) sits immediately above real_avail_end,
++	 * outside the physmap aperture and outside phystokv's range, and
++	 * check_for_panic_log's ml_io_map runs in the bootstrap-era tables
++	 * that do not survive the TTBR1 switch (PE_init_panicheader faulted
++	 * on platina: boot #25 QEMU nested panic).  Map it by hand at a
++	 * fixed VA in a free L1 slot of the final tables. */
++	{
++		vm_map_address_t pram_va = (vm_map_address_t)0xfffffe0105dc0000ULL;
++		pmap_paddr_t pram_pa = args->physBase + args->memSize;
++		vm_offset_t l2page = alloc_ptpage(TRUE);
++		tt_entry_t *l1_tte = cpu_tte + ((pram_va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT);
++		pt_entry_t *l3 = (pt_entry_t *)l2page;
++		uint32_t i;
++
++		*l1_tte = (kvtophys(l2page) & ARM_TTE_TABLE_MASK) |
++		    ARM_TTE_TYPE_TABLE | ARM_TTE_VALID;
++		bzero((void *)l2page, ARM_PGBYTES);
++		for (i = 0; i < (0x1000000 / ARM_PGBYTES); i++) {
++			l3[i] = (pram_pa + (uint64_t)i * ARM_PGBYTES) |
++			    ARM_PTE_VALID | ARM_PTE_TYPE |
++			    ARM_PTE_ATTRINDX(CACHE_ATTRINDX_WRITECOMB) |
++			    ARM_PTE_AF;
++		}
++		sweet_pram_va = pram_va;
++	}
++#endif
+ 	set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
+ 
+ 	ml_enable_monitor();
+diff --git a/pexpert/arm/pe_init.c b/pexpert/arm/pe_init.c
+index 04dda53..ab5bb01 100644
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -135,7 +135,19 @@ check_for_panic_log(void)
+ 		return;
+ 	}
+ 
+-	gPanicBase = ml_io_map_wcomb(reg_prop[0], panic_region_length[0]);
++	{
++		/* arm_vm_init (patch 0096) pre-maps the pram in the final page
++		 * tables; ml_io_map's bootstrap-era mapping does not survive the
++		 * TTBR1 switch.  Fall back to ml_io_map when the pre-mapping is
++		 * absent (non-SWEET trees). */
++		extern vm_offset_t sweet_pram_va;
++
++		if (sweet_pram_va != 0) {
++			gPanicBase = sweet_pram_va;
++		} else {
++			gPanicBase = ml_io_map_wcomb(reg_prop[0], panic_region_length[0]);
++		}
++	}
+ 
+ 	/* Deduct the size of the panic header from the panic region size */
+ 	panic_text_len = panic_region_length[0] - sizeof(struct embedded_panic_header);
