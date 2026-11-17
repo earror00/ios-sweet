@@ -1,0 +1,20 @@
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index c1e18f6..2079466 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -1831,13 +1831,13 @@ init_ptpages(tt_entry_t *tt, vm_map_address_t start, vm_map_address_t end, bool
+  * Use the otherwise empty 32MB block above low globals and below gVirtBase
+  * for a Normal-NC framebuffer alias that survives bootstrap TTBR0 teardown.
+  */
+-#define SWEET_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + ARM_TT_L2_SIZE)
++#define SWEET_EARLY_FB_VA (VM_MIN_KERNEL_ADDRESS + 0x5400000ULL)
+ 
+ void
+ sweet_early_map_final(void)
+ {
+ 	const vm_map_address_t va = SWEET_EARLY_FB_VA;
+-	assert(va + ARM_TT_L2_SIZE <= gVirtBase);
++	assert(((va & ~((vm_map_address_t)ARM_TT_L2_SIZE - 1)) + ARM_TT_L2_SIZE) <= gVirtBase);
+ 	tt_entry_t l1 = cpu_tte[(va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT];
+ 	if ((l1 & (ARM_TTE_VALID | ARM_TTE_TYPE_MASK)) != (ARM_TTE_VALID | ARM_TTE_TYPE_TABLE)) {
+ 		extern void sweet_early_hex(uint64_t);
