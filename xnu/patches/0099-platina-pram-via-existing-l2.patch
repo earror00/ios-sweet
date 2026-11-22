@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH 0099] 0099: pram into the kernel L1's unused L2 slot 1 -
+ never touch the L1 descriptor
+
+QEMU r33 (db27350) faulted at arm_vm_init+0xc5c (post-TTBR1-switch, inside
+the relocated pram block): its first fresh kernel-image access died with an
+L2 translation fault.  Root cause: pram_va 0xfffffe0105dc0000 lives in the
+kernel's own L1 slot 2016 (VM_MIN+4.4GB = L2 slot 130), so 0096/0098's
+"*l1_tte = new table descriptor" REPLACED the kernel image's L1 entry with
+a bare, empty L2 table.  The final tables then had no kernel image at all;
+execution survived only on stale TLB entries until the first DTLB miss.
+
+Fix: park the pram at VM_MIN+0x2000000 (L2 slot 1 of the kernel L1 entry -
+the window reserved above the low globals, excluded from VM allocation,
+measured EMPTY) and write the L3-table pointer through the existing L2
+table.  The L1 entry is now read, never written.
+---
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index e8e02b3..fc3de2a 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -2220,24 +2220,36 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 	 * outside the physmap aperture and outside phystokv's range, and
+ 	 * check_for_panic_log's ml_io_map runs too late to help
+ 	 * (PE_init_panicheader faulted on platina: boot #25 QEMU nested
+-	 * panic).  Map it by hand at a fixed VA in a free L1 slot of the
+-	 * final tables.  This MUST run after the TTBR1 switch: pre-switch
+-	 * alloc_ptpage's phystokv resolves through the slid physmap window,
+-	 * which the still-running bootstrap tables do not map (QEMU r31:
+-	 * bzero fault at _bzero+0x1c; r32: the same class at
+-	 * arm_vm_init+0xbe4).  Post-switch cpu_tte's physmap L1/L2 carry
+-	 * the window, so phystokv works normally here. */
++	 * panic).  Map it by hand at a fixed VA in the unused 32MB L2 slot
++	 * right above the low globals (VM_MIN+32..64MB): that window is
++	 * reserved and excluded from VM allocation, and measured EMPTY in
++	 * the final tables.  Write the L3-table pointer through the
++	 * kernel's EXISTING L1 entry - never touch the L1 descriptor
++	 * itself: the whole kernel VA space is one L1 slot, and 0096/0098's
++	 * pram_va (VM_MIN+4.4GB, same slot, L2 slot 130) made the old
++	 * fresh-L1 write unhook the kernel image from the final tables
++	 * (QEMU r33: first fresh kernel-image access L2-faults at
++	 * arm_vm_init+0xc5c).  This MUST run after the TTBR1 switch:
++	 * pre-switch alloc_ptpage's phystokv resolves through the slid
++	 * physmap window, which the running bootstrap tables do not map
++	 * (QEMU r31: bzero fault at _bzero+0x1c; r32: arm_vm_init+0xbe4). */
+ 	{
+-		vm_map_address_t pram_va = (vm_map_address_t)0xfffffe0105dc0000ULL;
++		vm_map_address_t pram_va = (vm_map_address_t)0xfffffe0002000000ULL;
+ 		pmap_paddr_t pram_pa = args->physBase + args->memSize;
+-		vm_offset_t l2page = alloc_ptpage(TRUE);
+ 		tt_entry_t *l1_tte = cpu_tte + ((pram_va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT);
+-		pt_entry_t *l3 = (pt_entry_t *)l2page;
++		tt_entry_t *l2_tte;
++		pt_entry_t *l3;
+ 		uint32_t i;
+ 
+-		*l1_tte = (kvtophys(l2page) & ARM_TTE_TABLE_MASK) |
++		assert((*l1_tte & (ARM_TTE_VALID | ARM_TTE_TYPE_MASK)) ==
++		    (ARM_TTE_VALID | ARM_TTE_TYPE_TABLE));
++		l2_tte = (tt_entry_t *)phystokv(*l1_tte & ARM_TTE_TABLE_MASK) +
++		    ((pram_va & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT);
++		assert(*l2_tte == ARM_TTE_EMPTY);
++		l3 = (pt_entry_t *)alloc_ptpage(TRUE);
++		*l2_tte = (kvtophys((vm_offset_t)l3) & ARM_TTE_TABLE_MASK) |
+ 		    ARM_TTE_TYPE_TABLE | ARM_TTE_VALID;
+-		bzero((void *)l2page, ARM_PGBYTES);
++		bzero((void *)l3, ARM_PGBYTES);
+ 		for (i = 0; i < (0x1000000 / ARM_PGBYTES); i++) {
+ 			l3[i] = (pram_pa + (uint64_t)i * ARM_PGBYTES) |
+ 			    ARM_PTE_TYPE |
