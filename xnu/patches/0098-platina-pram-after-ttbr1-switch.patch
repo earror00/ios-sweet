@@ -1,0 +1,83 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH 0098] 0098: leave the physmap dead zone - pram mapping after
+ the TTBR1 switch, aperture block dropped
+
+QEMU r32 (5cdce86) faulted at arm_vm_init+0xbe4: the 0097 aperture block
+called phystokv() after arm_vm_physmap_init() had populated ptov_table but
+before set_mmu_ttb_alternate() switched TTBR1 to the final tables.  In that
+window phystokv returns a slid physmap-window VA that exists only in the
+not-yet-live final tables (bootstrap TTBR1 has no L1 entry for it), so the
+first access dies with an L1 translation fault.  r31 died the same way at
+_bzero+0x1c (the 0096 pram block's own bzero of alloc_ptpage's VA).
+
+Measured ground truth (QEMU pmemsave + payload symtab):
+ - ptov_table at that point: [rest-of-physmem pa=0x1024d0000], [gPhysBase];
+ - physmap window = L1 slot 2015 of cpu_tte, L2 entries 26..152 populated;
+ - bootstrap TTBR1 lacks that L1 slot entirely until the switch;
+ - nothing in the tree touches VM_MIN+32MB ("slot 1 hole" was the r31
+   misdiagnosis - the faulting PC was the pram block's bzero, not
+   map_final).
+
+Fix: drop the aperture block; run the pram mapping after set_mmu_ttb_
+alternate() where the physmap aperture is live.
+---
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+index 6c41a5a..e8e02b3 100644
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -2214,37 +2214,19 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 	sweet_early_map_final();
+ #endif
+ 	arm_vm_physmap_init(args);
+-#if defined(SWEET)
+-	/* The bootstrap aperture VAs (phystokv of the PT pages, the ADT and
+-	 * boot_args at pa 0x102xxxxxx) live in L2 slot 1 of the kernel's own
+-	 * L1 slot.  The pre-switch identity covered them, but the final
+-	 * tables never did - the old fb alias happened to occupy that slot
+-	 * and mask the hole.  Map the window as a Normal-cacheable 32MB
+-	 * block BEFORE the TTBR1 switch (the write itself needs TTBR0):
+-	 * post-switch accesses (pmap_enter_bootstrap's table writes, the
+-	 * pram mapping, kvtophys) all go through these VAs. */
+-	{
+-		vm_map_address_t ap_va = (vm_map_address_t)0xfffffe0020000000ULL;
+-		pmap_paddr_t ap_pa = gPhysBase + 0x2000000ULL;
+-		tt_entry_t *l1_tte = cpu_tte + ((ap_va & ARM_TT_L1_INDEX_MASK) >> ARM_TT_L1_SHIFT);
+-		tt_entry_t *l2t = (tt_entry_t *)phystokv(*l1_tte & ARM_TTE_TABLE_MASK);
+-		tt_entry_t *l2_tte = l2t + ((ap_va & ARM_TT_L2_INDEX_MASK) >> ARM_TT_L2_SHIFT);
+-
+-		assert(*l2_tte == ARM_TTE_EMPTY);
+-		*l2_tte = ap_pa | ARM_TTE_VALID | ARM_TTE_TYPE_BLOCK |
+-		    ARM_TTE_BLOCK_SH(SH_OUTER_MEMORY) |
+-		    ARM_TTE_BLOCK_ATTRINDX(CACHE_ATTRINDX_DEFAULT) |
+-		    ARM_TTE_BLOCK_AF;
+-		__asm__ volatile("dsb ishst" ::: "memory");
+-	}
+-#endif
++	set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
+ #if defined(SWEET)
+ 	/* The panic region (pram) sits immediately above real_avail_end,
+ 	 * outside the physmap aperture and outside phystokv's range, and
+-	 * check_for_panic_log's ml_io_map runs in the bootstrap-era tables
+-	 * that do not survive the TTBR1 switch (PE_init_panicheader faulted
+-	 * on platina: boot #25 QEMU nested panic).  Map it by hand at a
+-	 * fixed VA in a free L1 slot of the final tables. */
++	 * check_for_panic_log's ml_io_map runs too late to help
++	 * (PE_init_panicheader faulted on platina: boot #25 QEMU nested
++	 * panic).  Map it by hand at a fixed VA in a free L1 slot of the
++	 * final tables.  This MUST run after the TTBR1 switch: pre-switch
++	 * alloc_ptpage's phystokv resolves through the slid physmap window,
++	 * which the still-running bootstrap tables do not map (QEMU r31:
++	 * bzero fault at _bzero+0x1c; r32: the same class at
++	 * arm_vm_init+0xbe4).  Post-switch cpu_tte's physmap L1/L2 carry
++	 * the window, so phystokv works normally here. */
+ 	{
+ 		vm_map_address_t pram_va = (vm_map_address_t)0xfffffe0105dc0000ULL;
+ 		pmap_paddr_t pram_pa = args->physBase + args->memSize;
+@@ -2265,7 +2247,6 @@ arm_vm_init(uint64_t memory_size, boot_args * args)
+ 		sweet_pram_va = pram_va;
+ 	}
+ #endif
+-	set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
+ 
+ 	ml_enable_monitor();
+ 
